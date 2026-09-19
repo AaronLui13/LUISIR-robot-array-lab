@@ -2,6 +2,7 @@ import { run, initial, clone, codeLines, equal, card } from './engine.mjs';
 import { MISSIONS, LESSONS, dataFor, starter, assess, CARD_TYPES, FIELD_LABELS } from './missions.mjs';
 import { predictionAnswer, indexGoal, explanations, hint, startingCards, indexMapping } from './learning.mjs';
 import { readProgress, writeProgress } from './progress.mjs';
+import { stepEffect, robotMarkup, createGameAnimator } from './game-effects.mjs';
 const $ = s => document.querySelector(s);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let saved={};try{saved=JSON.parse(localStorage.getItem('luisir-array-badges')||'{}');}catch{/* Storage is optional. */}
@@ -9,12 +10,16 @@ if(!saved || typeof saved !== 'object' || Array.isArray(saved)) saved={};
 let id=0,v=0,cards=starter(0),frames=[initial(dataFor(0))],cursor=0,prediction='',locked=false,selected=[],result=null,hints=0,quiz=null,timer=null,drawer=false,mode='scaffold',drag=null,predictedCorrect=false;
 let storage=null;try{storage=window.localStorage;}catch{/* Private browsing may block storage. */}
 let progress=readProgress(storage)||{version:2,id:0,v:0,drafts:{}};
+const animator=createGameAnimator(), motionQuery=window.matchMedia('(prefers-reduced-motion: reduce)');
+let motionOn=true;try{motionOn=storage?.getItem('luisir-array-motion')!=='off';}catch{/* Motion remains optional. */}
+let lastScene=null,runVersion=0,pendingCelebration=false;
+const motionEnabled=()=>motionOn&&!motionQuery.matches;
 let storageOK=true, format='pseudo', speed=600, advanced=false, mappingBase=0, mappingPosition=0, unfolded=false;
 function persist(){progress.id=id;progress.v=v;progress.drafts[`${id}:${v}`]={cards:clone(cards),mode,prediction,locked,selected:clone(selected)};storageOK=writeProgress(storage,progress);}
 function restoreDraft(){const draft=progress.drafts[`${id}:${v}`];mode=draft?.mode||'scaffold';cards=draft?clone(draft.cards):startingCards(id,v,mode);prediction=draft?.prediction||'';locked=draft?.locked||false;selected=draft?clone(draft.selected):[];predictedCorrect=locked&&normalize(prediction)===normalize(predAnswer());}
 const mission=()=>MISSIONS[id],state=()=>frames[cursor],grid=()=>dataFor(id,v);
 function stop(){if(timer)clearInterval(timer);timer=null;}
-function invalidate(){stop();frames=[initial(grid())];cursor=0;result=null;quiz=null;}
+function invalidate(){stop();runVersion++;pendingCelebration=false;frames=[initial(grid())];cursor=0;result=null;quiz=null;}
 function load(next,variant=0){persist();stop();id=next;v=variant;restoreDraft();hints=0;drawer=false;advanced=false;mappingPosition=0;unfolded=false;invalidate();render();window.scrollTo({top:0,behavior:'instant'});}
 function save(){try{localStorage.setItem('luisir-array-badges',JSON.stringify(saved));}catch{/* Do not require browser storage. */}}
 function predAnswer(){return predictionAnswer(id,v);}
@@ -38,10 +43,10 @@ function verify(){
 function table(a,type='grid'){
  if(!a.length)return '<p class="muted">建立新表後，結果會顯示在這裏。</p>';
  const cols=a[0].length,position=type==='grid'?state().current:state().destination;
- return `<div class="array-table ${type==='result'?'result-table':''}" style="--cols:${cols}" role="group" aria-label="${type==='grid'?'原貨架':'結果表'}"><span class="axis-corner">r ╲ c</span>${a[0].map((_,c)=>`<span class="axis ${position?.[1]===c?'axis-active':''}">${c}</span>`).join('')}${a.map((row,r)=>`<span class="axis ${position?.[0]===r?'axis-active':''}">${r}</span>${row.map((value,c)=>{
+ return `${type==='grid'?'<div class="robot-stage">':''}<div class="array-table ${type==='result'?'result-table':''}" style="--cols:${cols}" role="group" aria-label="${type==='grid'?'原貨架':'結果表'}"><span class="axis-corner">r ╲ c</span>${a[0].map((_,c)=>`<span class="axis ${position?.[1]===c?'axis-active':''}">${c}</span>`).join('')}${a.map((row,r)=>`<span class="axis ${position?.[0]===r?'axis-active':''}">${r}</span>${row.map((value,c)=>{
  const visits=state().visited.filter(p=>equal(p,[r,c])).length,active=equal(type==='grid'?state().current:state().destination,[r,c]),chosen=type==='grid'&&selected.some(p=>equal(p,[r,c])),target=(id===1&&equal(mission().highlight,[r,c]))||(id===9&&equal([1,v===2?0:1],[r,c])),inRegion=id===15&&r<2&&c>=1;
  return `<button class="cell ${value===0?'empty':''} ${value==='C'?'tracked':''} ${active?'active':''} ${chosen?'chosen':''} ${visits?'visited':''} ${target?'target':''} ${inRegion?'in-region':''}" data-cell="${r},${c}" data-table="${type}" aria-label="行 ${r} 列 ${c}，${value==='C'?'橙色 C':value}${visits?`，已處理 ${visits} 次`:''}" ${type==='grid'?'aria-pressed="'+chosen+'"':''}><span class="cell-number">${value}</span><span class="cell-address">${r},${c}</span>${visits?`<span class="visit-count">${visits===1?'✓':visits}</span>`:''}</button>`;
- }).join('')}`).join('')}</div>`;
+ }).join('')}`).join('')}</div>${type==='grid'?robotMarkup('shelf-robot')+'</div>':''}`;
 }
 function viewBrief(){
  if(id===9)return `目前貨物在 ${v===2?'(1,0)':'(1,1)'}，方向${['向右','向上','向左'][v]}。先計算 nr、nc，檢查邊界，再檢查空位，最後更新。`;
@@ -63,10 +68,17 @@ function mappingView(){
  const rows=grid().length,cols=grid()[0].length,m=indexMapping(rows,cols,mappingBase,mappingPosition);
  return `<details class="mapping" data-details="mapping"><summary>二維 ⇄ 一維：展開貨架，追蹤同一格</summary><p>先數前面完整的行，再數這一行的格。這個示範可切換編號慣例；任務指令仍由 0 開始。</p><label>示範索引 <select id="mapping-base"><option value="0" ${mappingBase===0?'selected':''}>由 0 開始</option><option value="1" ${mappingBase===1?'selected':''}>由 1 開始</option></select></label><div class="mapping-actions"><button data-action="unfold">${unfolded?'還原二維貨架':'逐行展開成一維'}</button><button data-action="map-back" ${mappingPosition===0?'disabled':''}>上一格</button><button data-action="map-next" ${mappingPosition===m.count-1?'disabled':''}>下一格</button></div><div class="mapping-scroll"><div class="mapping-canvas" style="width:${(unfolded?m.count:cols)*66}px;height:${(unfolded?1:rows)*66}px">${grid().flat().map((_,k)=>{const point=indexMapping(rows,cols,mappingBase,k);return `<button class="mapping-cell ${k===mappingPosition?'selected':''}" data-map="${k}" style="left:${(unfolded?k:k%cols)*66}px;top:${(unfolded?0:Math.floor(k/cols))*66}px" aria-label="示範位置 (${point.r},${point.c})，編號 ${point.k}" aria-pressed="${k===mappingPosition}"><b>${point.k}</b><small>(${point.r},${point.c})</small></button>`;}).join('')}</div></div><p class="mapping-answer">同一格：(${m.r}, ${m.c}) ⇄ 編號 ${m.k}；每行 n = ${cols} 格。</p><details data-details="formulas"><summary>看換算方法與代入步驟</summary><pre>${mappingBase===0?`k = r*n+c = ${m.r}*${cols}+${m.c} = ${m.k}\nr = k DIV n = ${Math.floor(m.k/cols)}\nc = k MOD n = ${m.k%cols}`:`k = (i-1)*n+j = (${m.r}-1)*${cols}+${m.c} = ${m.k}\ni = (k-1) DIV n+1 = ${Math.floor((m.k-1)/cols)+1}\nj = (k-1) MOD n+1 = ${(m.k-1)%cols+1}`}</pre><p>${mappingBase===0?'r、c、k 均由 0 開始。':'i、j、k 均由 1 開始；先減 1，完成換算後再加 1。'}</p></details></details>`;
 }
+function robotConsole(s){
+ const total=Math.max(0,frames.length-1),percent=total?Math.round(cursor/total*100):0;
+ const status=s.error?'需要檢查指令':cursor===0?'準備出發':cursor===total?'指令完成，核對結果吧':CARD_TYPES[cards[s.card]?.op]?.label||'正在執行';
+ return `<div class="robot-console"><div class="robot-avatar">${robotMarkup()}</div><div class="robot-message"><small>ROBOT–01 · 倉庫小幫手</small><b>${status}</b><span>跟著我看每一步的貨位變化</span></div><button class="motion-toggle" data-action="motion" aria-pressed="${motionEnabled()}" ${motionQuery.matches?'disabled title="跟隨裝置的減少動態效果設定"':''}>動畫：${motionQuery.matches?'簡化':motionOn?'開':'關'}</button><div class="robot-progress" role="progressbar" aria-label="程式執行進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width:${percent}%"></span></div><small class="robot-progress-label">${total?`${cursor} / ${total} 步`:'鎖定預測後，按「執行一步」'}</small></div>`;
+}
 function monitorView(s){
- return `<div class="live-monitor" aria-label="執行快照"><div class="mini-grid" style="--cols:${s.grid[0].length}">${s.grid.flatMap((row,r)=>row.map((value,c)=>`<span class="${equal(s.current,[r,c])?'active':''}" aria-label="快照行 ${r} 列 ${c}，${escape(value)}">${escape(value)}</span>`)).join('')}</div><div><b>第 ${cursor} 步${s.card>=0?` · 第 ${s.card+1} 張卡`:''}</b><p>${escape(s.log)}</p><small>${s.current?`來源 (${s.current.join(',')})`:''}${s.destination?` → 目的 (${s.destination.join(',')})`:''}</small><div class="monitor-vars">${Object.entries(s.vars).filter(([k])=>!['rows','cols'].includes(k)).map(([k,value])=>`<code>${escape(k)}=${escape(JSON.stringify(value))}</code>`).join(' ')}</div></div></div>`;
+ return `<div class="live-monitor" aria-label="執行快照"><div class="mini-grid" style="--cols:${s.grid[0].length}">${s.grid.flatMap((row,r)=>row.map((value,c)=>`<span class="${equal(s.current,[r,c])?'active':''}" aria-label="快照行 ${r} 列 ${c}，${escape(value)}">${escape(value)}</span>`)).join('')}</div><div><b><span class="robot-avatar compact">${robotMarkup()}</span>第 ${cursor} 步${s.card>=0?` · 第 ${s.card+1} 張卡`:''}</b><p>${escape(s.log)}</p><small>${s.current?`來源 (${s.current.join(',')})`:''}${s.destination?` → 目的 (${s.destination.join(',')})`:''}</small><div class="output-signal">${s.outputs.length?`最新輸出：${escape(JSON.stringify(s.outputs.at(-1)))}`:''}</div><div class="monitor-vars">${Object.entries(s.vars).filter(([k])=>!['rows','cols'].includes(k)).map(([k,value])=>`<code>${escape(k)}=${escape(JSON.stringify(value))}</code>`).join(' ')}</div></div></div>`;
 }
 function render(){
+ const beforeRobot=animator.capture(),sceneKey=`${id}:${v}:${runVersion}`;
+ const effect=lastScene?.key===sceneKey&&cursor===lastScene.cursor+1?stepEffect(lastScene.state,state()):null;
  const mapPositions=new Map([...document.querySelectorAll('[data-map]')].map(el=>[el.dataset.map,el.getBoundingClientRect()]));
  const focused=document.activeElement,focusAction=focused?.getAttribute('data-action'),focusEdit=focused?.getAttribute('data-edit'),focusIndex=focused?.getAttribute('data-index');
  const oldScroll=$('.program')?.scrollTop||0,codeScroll=$('.code-view')?.scrollTop||0,mapScroll=$('.mapping-scroll')?.scrollLeft||0,focusId=focused?.id;
@@ -86,7 +98,7 @@ function render(){
  ${id===0?`<div class="onboarding"><b>${selected.length<2&&!locked?'第一步：依序點選 (0,2) 與 (2,0)。':!locked?'第二步：填入兩格貨量，鎖定預測。':'第三步：補完指令，按執行一步，觀察讀取與輸出。'}</b><button class="text-button" data-action="advanced">${advanced?'收起編排工具':'顯示全部編排工具'}</button></div>`:''}
  ${mappingView()}
  <div class="workbench ${id===0&&!advanced&&!locked?'intro-simple':''}">
- <section class="panel warehouse"><div class="panel-heading"><h2>倉庫貨架 <small>Warehouse</small></h2><span class="dimensions">${grid().length} × ${grid()[0].length}</span></div><div class="warehouse-body"><div class="coordinate-note"><span>行 r ↓</span><span>列 c →</span></div>${table(s.grid)}<div class="legend"><span><i class="legend-square"></i> ${[13,14].includes(id)?'字母圖案':'每格數字 = 貨量'}</span><span><i class="legend-square dashed"></i> ${[13,14].includes(id)?'橙色 C = 追蹤點':id===9?'0 = 空格 · 橙框 = 起點':'0 = 空格'}</span></div><div class="selection-info">${s.current?`來源位置 <b>(${s.current.join(', ')})</b>${s.destination?` → 目的 <b>(${s.destination.join(', ')})</b>`:''}`:selected.length?`已選位置 <b>${selected.map(p=>'('+p.join(',')+')').join(' → ')}</b>`:'點選貨位，觀察行與列索引。'}</div>
+ <section class="panel warehouse"><div class="panel-heading"><h2>倉庫貨架 <small>Warehouse</small></h2><span class="dimensions">${grid().length} × ${grid()[0].length}</span></div><div class="warehouse-body">${robotConsole(s)}<div class="coordinate-note"><span>行 r ↓</span><span>列 c →</span></div>${table(s.grid)}<div class="legend"><span><i class="legend-square"></i> ${[13,14].includes(id)?'字母圖案':'每格數字 = 貨量'}</span><span><i class="legend-square dashed"></i> ${[13,14].includes(id)?'橙色 C = 追蹤點':id===9?'0 = 空格 · 橙框 = 起點':'0 = 空格'}</span></div><div class="selection-info">${s.current?`來源位置 <b>(${s.current.join(', ')})</b>${s.destination?` → 目的 <b>(${s.destination.join(', ')})</b>`:''}`:selected.length?`已選位置 <b>${selected.map(p=>'('+p.join(',')+')').join(' → ')}</b>`:'點選貨位，觀察行與列索引。'}</div>
  ${[7,13,14,16].includes(id)?`<div class="new-array"><h3>新表 <span>result</span></h3>${table(s.result,'result')}</div>`:''}
  <div class="prediction"><div class="micro-heading"><span>01 / 先預測</span>${locked?'<b>已鎖定</b>':'<b>執行前</b>'}</div><label for="prediction">${predPrompt()}</label><input id="prediction" value="${escape(prediction)}" placeholder="填入你的預測" ${locked?'disabled':''} autocomplete="off"><button class="${locked?'quiet':'dark'}" data-action="predict">${locked?'重新預測':'鎖定我的預測 →'}</button></div></div></section>
  <section class="panel workspace" id="workspace"><div class="panel-heading"><h2>指令工作區 <small>Program</small></h2><span class="card-count">${cards.length} 張卡</span></div><div class="workspace-toolbar"><label>編排方式 <select id="mode"><option value="scaffold" ${mode==='scaffold'?'selected':''}>補完關鍵步驟</option><option value="arrange" ${mode==='arrange'?'selected':''}>排卡練習</option><option value="blank" ${mode==='blank'?'selected':''}>自由編排</option></select></label><button class="text-button" data-action="restore">重設指令</button></div><p class="workspace-note">拖動卡片排序，或用 ↑ ↓；用 → 縮排，放入重複／如果內。</p>
@@ -106,7 +118,7 @@ function render(){
  bind();
  document.querySelectorAll('details[data-details]').forEach(d=>{if(openDetails.has(d.dataset.details))d.open=openDetails.get(d.dataset.details);});
  const map=$('.mapping-scroll');if(map){map.scrollLeft=mapScroll;const point=map.querySelector('.selected');if(unfolded&&point){const left=point.offsetLeft;if(left<map.scrollLeft||left+point.offsetWidth>map.scrollLeft+map.clientWidth)map.scrollLeft=Math.max(0,left-map.clientWidth/2);}}
- if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)document.querySelectorAll('[data-map]').forEach(el=>{
+ if(motionEnabled())document.querySelectorAll('[data-map]').forEach(el=>{
   const before=mapPositions.get(el.dataset.map),after=el.getBoundingClientRect();
   if(before?.width && after.width && (before.x!==after.x || before.y!==after.y))el.animate([{transform:`translate(${before.x-after.x}px,${before.y-after.y}px)`},{transform:'translate(0,0)'}],{duration:600,easing:'ease-in-out'});
  });
@@ -119,6 +131,8 @@ function render(){
  else if(focusEdit)restore=document.querySelector(`[data-edit="${focusEdit}"][data-index="${focusIndex}"]`);
  else if(focusId)restore=document.getElementById(focusId);
  if(restore&&!restore.disabled)restore.focus({preventScroll:true});
+ animator.render({beforeRobot:lastScene?.key===sceneKey?beforeRobot:null,state:s,effect,enabled:motionEnabled(),duration:Math.min(480,speed*.8),celebrate:pendingCelebration,mission:id,finished:saved[id]?.complete});
+ pendingCelebration=false;lastScene={key:sceneKey,cursor,state:clone(s)};
 }
 function hintText(){return escape(hint(id,v,hints,mode));}
 function bind(){
@@ -138,9 +152,10 @@ function bind(){
  $('.program').ondragover=e=>e.preventDefault();
  $('.program').ondrop=e=>{e.preventDefault();if(!drag)return;const target=e.target.closest('[data-card]');let at=target?Number(target.dataset.card):cards.length;if(drag.op)cards.splice(at,0,card(drag.op,clone(CARD_TYPES[drag.op].args)));else{const [c]=cards.splice(drag.index,1);if(drag.index<at)at--;cards.splice(at,0,c);}drag=null;invalidate();render();};
  document.querySelectorAll('[data-frame]').forEach(b=>b.onclick=()=>{stop();cursor=Number(b.dataset.frame);result=null;render();});
- document.querySelectorAll('[data-quiz]').forEach(b=>b.onclick=()=>{quiz=Number(b.dataset.quiz);if(quiz===mission().correct){const previous=saved[id]||{variants:[]};const variants=[...new Set([...(previous.variants||[]),v])];if([7,8,17].includes(id))variants.push(0,1);saved[id]={variants:[...new Set(variants)],complete:new Set(variants).size>=(mission().variants?.length||1),prediction:predictedCorrect||previous.prediction};save();}render();});
+ document.querySelectorAll('[data-quiz]').forEach(b=>b.onclick=()=>{const wasCorrect=quiz===mission().correct;quiz=Number(b.dataset.quiz);pendingCelebration=quiz===mission().correct&&!wasCorrect;if(quiz===mission().correct){const previous=saved[id]||{variants:[]};const variants=[...new Set([...(previous.variants||[]),v])];if([7,8,17].includes(id))variants.push(0,1);saved[id]={variants:[...new Set(variants)],complete:new Set(variants).size>=(mission().variants?.length||1),prediction:predictedCorrect||previous.prediction};save();}render();});
  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{
   switch(b.dataset.action){
+   case 'motion':motionOn=!motionOn;try{storage?.setItem('luisir-array-motion',motionOn?'on':'off');}catch{/* Optional preference. */}render();break;
    case 'drawer':drawer=!drawer;render();break;
    case 'advanced':advanced=!advanced;render();break;
    case 'unfold':unfolded=!unfolded;render();break;
@@ -159,5 +174,7 @@ function bind(){
   }
  });
 }
+motionQuery.addEventListener('change',()=>render());
+let resizeFrame;window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>render());});
 id=progress.id;v=progress.v;restoreDraft();invalidate();
 render();
