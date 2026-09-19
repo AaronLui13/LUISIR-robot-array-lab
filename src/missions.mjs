@@ -13,7 +13,7 @@ const scan = () => [loop('r','rows'),loop('c','cols',1)];
 const read = (r,c,name='value',d=0) => C('read',{r,c,name},d);
 const fresh = (rows,cols) => C('new',{rows,cols});
 const copy = (r,c,value='grid[r][c]',d=2) => C('copy',{r,c,value},d);
-export const LESSONS = ['操作教學','認識與修改','遍歷與統計','搜尋與回傳','索引轉換','移動與邊界','遍歷次序','座標變換','局部與整合','終極工作單'];
+export const LESSONS = ['操作教學','認識與修改','遍歷與統計','搜尋與輸出','索引轉換','移動與邊界','遍歷次序','座標變換','局部與整合','終極工作單'];
 const spec = (id,lesson,title,brief,goal,predict,answer,question,choices,correct,options={}) => ({id,lesson,title,brief,goal,predict,answer,question,choices,correct,...options});
 export const MISSIONS = [
  spec(0,0,'認識控制台','行 r 向下，列 c 向右；索引由 0 開始。先點選 (0,2)，再點選 (2,0)，讀取兩格。','依序輸出 4、0；完成兩個地址的點選。','預測兩次讀取的數量（用逗號分隔）','4,0','grid[0][2] 的 2 代表甚麼？',['貨物有 2 件','列索引是 2','第二行'],1),
@@ -21,8 +21,8 @@ export const MISSIONS = [
  spec(2,1,'指定位置補貨','把 (1,2) 的貨量由 0 設定成 5。先在貨架點選你預計會改變的一格。','只有 (1,2) 變成 5，其餘保持原值。','重新讀取 grid[1][2]，預計得到甚麼？','5','同一地址為甚麼讀到不同數字？',['地址改變了','索引從 1 開始','該格儲存的值已被更新'],2),
  spec(3,2,'巡查所有貨位','把「每行」「每列」「檢查目前格」組成巢狀迴圈。縮排表示指令屬於哪個迴圈。','12 格全部處理，每格恰好一次。','逐行巡查的第二個位置是？（行,列）','0,1','內層迴圈負責甚麼？',['走完目前行的所有列','只檢查第一格','改變貨物數量'],0),
  spec(4,2,'空位報告','每格數字是貨量；0 代表空位。巡查時符合條件才把計數器加 1。','輸出空格總數；變式要逐行輸出。','共用貨架有幾個空位？','4','每行分別計數，count 應在哪裏歸零？',['最內層每格之前','每一行開始時','所有行完成後'],1,{variants:['整個貨架','每行空位']}),
- spec(5,3,'尋找指定貨量','按逐行次序搜尋 3。找到後回傳位置並停止。再用 9 測試找不到的情況。','3 → (1,1)；9 →「找不到」。不保留舊位置。','數量為 3 的位置是？（行,列）','1,1','搜尋應回傳甚麼？',['貨量 3','總貨量','符合條件的行、列'],2,{variants:['搜尋 3','搜尋 9']}),
- spec(6,3,'第一個？還是全部？','搜尋貨量 2。比較回傳第一個與回傳所有位置，調整停止的時機。','第一個 (0,0)；全部 (0,0)、(1,3)、(2,1)。','共有幾格的貨量是 2？','3','要找齊所有位置，找到一格後應怎樣？',['立刻停止整個程式','繼續搜尋餘下格子','把搜尋值加 1'],1,{variants:['第一個','全部位置','搜尋不存在的 9']}),
+ spec(5,3,'尋找指定貨量','按逐行次序搜尋 3。找到後輸出位置並停止。再用 9 測試找不到的情況。','3 → (1,1)；9 →「找不到」。不保留舊位置。','數量為 3 的位置是？（行,列）','1,1','搜尋應輸出甚麼？',['貨量 3','總貨量','符合條件的行、列'],2,{variants:['搜尋 3','搜尋 9']}),
+ spec(6,3,'第一個？還是全部？','搜尋貨量 2。比較輸出第一個與輸出所有位置，調整停止的時機。','第一個 (0,0)；全部 (0,0)、(1,3)、(2,1)。','共有幾格的貨量是 2？','3','要找齊所有位置，找到一格後應怎樣？',['立刻停止整個程式','繼續搜尋餘下格子','把搜尋值加 1'],1,{variants:['第一個','全部位置','搜尋不存在的 9']}),
  spec(7,4,'貨位貼標籤','用「前面完整行的格數＋目前列索引」計算一維編號。建立新表，原貨架不變。','逐行標籤 0–11；每行 5 格也能換算。','(2,1) 的一維編號是？','9','一維編號的公式是？',['r * rows + c','r + c','r * cols + c'],2,{variants:['每行 4 格','每行 5 格']}),
  spec(8,4,'只剩一張編號單','編號單只寫了 9。利用整除 // 及餘數 % 還原行列。','每行 4 格 → (2,1)；每行 5 格 → (1,4)。','每行 4 格時，編號 9 的位置？（行,列）','2,1','為甚麼除以 cols？',['每一完整行有 cols 格','因為總共有 cols 行','任何常數都可以'],0,{variants:['每行 4 格','每行 5 格']}),
  spec(9,5,'可以搬過去嗎？','目前貨物在 (1,1)，整批搬一格。先算 nr、nc，檢查邊界，再檢查空位，最後更新。','向右成功；向上碰到貨物；向外越界時原圖不變。','向右搬運的候選位置？（行,列）','1,2','哪一步必須先做？',['先讀取目標貨量','先清空來源','先確認候選位置在邊界內'],2,{variants:['向右空位','向上碰撞','左邊界向外']}),
@@ -33,7 +33,7 @@ export const MISSIONS = [
  spec(14,7,'把圖案轉正','先選新表尺寸，再組合目的位置。試試轉置與順時針 90°。','新表 3×2；六個字母各出現一次。','順時針 90° 後 C 的位置？（行,列）','2,1','順時針 90° 的映射是？',['(c, rows-1-r)','(r,c)','(cols-1-c,r)'],0,{variants:['轉置','順時針 90°']}),
  spec(15,8,'只統計這一區','區域左上角 (0,1)、高 2、寬 3。只處理框內六格並累加。','六格各一次，輸出總和 10；框外不參與。','這六格的總和是？','10','迴圈終點不包括在內，列的終點應填？',['3','4','2'],1,{region:[0,1,2,3]}),
  spec(16,8,'縮小倉庫地圖','每個不重疊 2×2 區塊合成一格。從結果索引計算來源起點。','建立 2×2 結果；每塊獨立累加，每來源格恰好一次。','左上 2×2 區塊的總和是？','6','不重疊區塊的來源起點步長是多少？',['1','2','4'],1,{variants:['2×2 合併','滑動視窗最大值','不能整除：捨去邊緣','不能整除：補 0']}),
- spec(17,9,'完成一張倉庫工作單','連續任務：找第一個空位 → 輸出位置與一維編號 → 補入 6 → 找更新後總和最大的 2×2 區域。','回傳最大總和及左上角；同值保留逐行最先者。兩組資料都要成功。','第一組資料首個空位的一維編號是？','1','最大總和同值時怎樣保留第一個？',['使用 > 才更新最佳值','使用 >= 更新','每次都更新'],0,{variants:['工作單 A','工作單 B']})
+ spec(17,9,'完成一張倉庫工作單','連續任務：找第一個空位 → 輸出位置與一維編號 → 補入 6 → 找更新後總和最大的 2×2 區域。','輸出最大總和及左上角；同值保留逐行最先者。兩組資料都要成功。','第一組資料首個空位的一維編號是？','1','最大總和同值時怎樣保留第一個？',['使用 > 才更新最佳值','使用 >= 更新','每次都更新'],0,{variants:['工作單 A','工作單 B']})
 ];
 export function dataFor(id,v=0) {
   if ([7,8].includes(id) && v===1) return [[2,0,4,1,3],[1,3,0,2,1],[0,2,1,0,4]];
@@ -79,11 +79,25 @@ export function solution(id,v=0) {
 }
 export function starter(id,v=0) {
   const cards = solution(id,v);
-  // One editable scaffold gap per mission, never silently auto-filled at execution.
-  const gaps = [0,4,0,1,0,4,4,3,1,3,0,0,5,3,0,2,0,0];
-  const index=Math.min(gaps[id],cards.length-1), chosen=cards[index];
-  const key=({read:'r',write:'value',for:'to',set:'value',if:'test',copy:'c',new:'rows',inspect:'r'})[chosen.op];
-  if(key) chosen.args[key]='?';
+  // Keep early guidance; later gaps require the actual algorithm, not a spare constant.
+  const gaps = {
+    0:[[0,'r']],1:[[4,'r'],[4,'c']],2:[[0,'value']],3:[[1,'to']],
+    4:[[4,'test'],[5,'value']],5:[[4,'test']],6:[[4,'test']],
+    7:[[3,'value']],8:[[1,'value'],[2,'value']],9:[[3,'value'],[4,'test']],
+    10:[[2,'value']],11:[[0,'to'],[1,'to']],
+    12:[[1,'test'],[5,'from'],[5,'step']],13:[[3,v===0?'c':'r']],
+    14:[[0,'rows'],[0,'cols'],[3,'r'],[3,'c']],
+    15:[[1,'to'],[2,'from'],[2,'to'],[4,'value']]
+  };
+  if (id === 16 || id === 17) {
+    for (const c of cards) {
+      if (c.op === 'if' || (c.op === 'set' && c.args.name === 'total') ||
+          (c.op === 'output' && c.args.value === 'r*cols+c') ||
+          (id === 16 && c.op === 'new')) {
+        for (const key of Object.keys(c.args)) if (key !== 'name') c.args[key] = '?';
+      }
+    }
+  } else for (const [index,key] of gaps[id]) cards[index].args[key] = '?';
   return cards;
 }
 export function expected(id,v,grid) {
@@ -146,7 +160,7 @@ export const CARD_TYPES = {
  inspect:{label:'檢查目前格',english:'Visit',stage:2,args:{r:'r',c:'c'}},
  set:{label:'設定／加總／暫存',english:'Variable',stage:2,args:{name:'total',value:'0'}},
  if:{label:'如果',english:'If',stage:2,args:{test:'grid[r][c] == 0'}},
- record:{label:'回傳位置',english:'Position',stage:3,args:{r:'r',c:'c'}},
+ record:{label:'輸出位置',english:'Position',stage:3,args:{r:'r',c:'c'}},
  stop:{label:'停止整個程式',english:'Return',stage:3,args:{}},
  new:{label:'建立新表',english:'New array',stage:4,args:{rows:'rows',cols:'cols'}},
  copy:{label:'寫入新表',english:'Map',stage:4,args:{r:'r',c:'c',value:'r*cols+c'}}

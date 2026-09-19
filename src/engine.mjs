@@ -26,15 +26,31 @@ export function expression(source, state) {
   function binary(min) {
     let left = atom();
     while ((priority[tokens[i]] || 0) > min) {
+      if (priority[tokens[i]] === 3) {
+        // A Python comparison chain evaluates each operand once and stops on false.
+        const first = left, comparisons = [];
+        while (priority[tokens[i]] === 3) comparisons.push([tokens[i++], binary(3)]);
+        left = () => {
+          let a = first();
+          for (const [op, get] of comparisons) {
+            const b = get();
+            const yes = ({'==': () => a === b, '!=': () => a !== b, '<': () => a < b, '>': () => a > b, '<=': () => a <= b, '>=': () => a >= b})[op]();
+            if (!yes) return false;
+            a = b;
+          }
+          return true;
+        };
+        continue;
+      }
       const op = tokens[i++], right = binary(priority[op]), previous=left;
       left=()=>{
         const a=previous();
         // Match Python short-circuit semantics: an out-of-bounds RHS is never read.
-        if(op==='and'&&!a)return false;
-        if(op==='or'&&a)return true;
+        if(op==='and'&&!a)return a;
+        if(op==='or'&&a)return a;
         const b=right();
         if (['//', '%'].includes(op) && b === 0) throw Error('不能除以 0。');
-        return ({ '+': () => a + b, '-': () => a - b, '*': () => a * b, '//': () => Math.floor(a / b), '%': () => a % b, '==': () => a === b, '!=': () => a !== b, '<': () => a < b, '>': () => a > b, '<=': () => a <= b, '>=': () => a >= b, and: () => Boolean(b), or: () => Boolean(b) })[op]();
+        return ({ '+': () => a + b, '-': () => a - b, '*': () => a * b, '//': () => Math.floor(a / b), '%': () => a - Math.floor(a / b) * b, and: () => b, or: () => b })[op]();
       };
     }
     return left;
@@ -104,7 +120,7 @@ export function run(grid, cards) {
       } else if (n.op === 'output') {
         const v = a.value === 'not_found' ? '找不到' : value(a.value); state.outputs.push(v); emit(n, `輸出：${JSON.stringify(v)}`);
       } else if (n.op === 'record') {
-        const r = value(a.r), c = value(a.c); checkCell(state.grid, r, c); state.outputs.push([r, c]); emit(n, `回傳位置 (${r},${c})`);
+        const r = value(a.r), c = value(a.c); checkCell(state.grid, r, c); state.outputs.push([r, c]); emit(n, `輸出位置 (${r},${c})；繼續下一張指令。`);
       } else if (n.op === 'stop') {
         state.stopped = true; emit(n, '停止整個程式：不再巡查其他格。');
       } else if (n.op === 'new') {
@@ -117,7 +133,40 @@ export function run(grid, cards) {
   try { block(tree(cards)); } catch (error) { state.error = error.message; state.log = error.message; frames.push(clone(state)); }
   return frames;
 }
-export function python(cards) {
-  const lines = { for: a => `for ${a.name} in range(${a.from}, ${a.to}, ${a.step}):`, if: a => `if ${a.test}:`, set: a => `${a.name} = ${a.value}`, read: a => `${a.name} = grid[${a.r}][${a.c}]`, inspect: a => `process(grid[${a.r}][${a.c}])  # 標記已處理`, write: a => `grid[${a.r}][${a.c}] = ${a.value}`, copy: a => `result[${a.r}][${a.c}] = ${a.value}`, output: a => `print(${a.value === 'not_found' ? '"找不到"' : a.value})`, record: a => `print((${a.r}, ${a.c}))  # 位置`, stop: () => 'return  # 停止整個任務函數', new: a => `result = [[0 for _ in range(${a.cols})] for _ in range(${a.rows})]` };
-  return '# 指令對照；return 需放在函數內\n# rows = len(grid); cols = len(grid[0])\n' + cards.map(c => '    '.repeat(c.depth) + lines[c.op](c.args)).join('\n');
+export function codeLines(cards, format = 'python') {
+  const pseudo = format === 'pseudo';
+  const expr = value => pseudo ? String(value).replace(/\/\//g,' DIV ').replace(/%/g,' MOD ').replace(/==/g,'=').replace(/\band\b/g,'AND').replace(/\bor\b/g,'OR').replace(/\s+/g,' ').trim() : value;
+  const render = {
+    for: a => pseudo ? `FOR ${a.name} FROM ${expr(a.from)} TO EXCLUSIVE ${expr(a.to)} STEP ${expr(a.step)}` : `for ${a.name} in range(${a.from}, ${a.to}, ${a.step}):`,
+    if: a => pseudo ? `IF ${expr(a.test)} THEN` : `if ${a.test}:`,
+    set: a => `${a.name} ${pseudo?'←':'='} ${expr(a.value)}`,
+    read: a => `${a.name} ${pseudo?'←':'='} grid[${expr(a.r)}][${expr(a.c)}]`,
+    inspect: a => pseudo ? `VISIT grid[${expr(a.r)}][${expr(a.c)}]` : `process(grid[${a.r}][${a.c}])`,
+    write: a => `grid[${expr(a.r)}][${expr(a.c)}] ${pseudo?'←':'='} ${expr(a.value)}`,
+    copy: a => `result[${expr(a.r)}][${expr(a.c)}] ${pseudo?'←':'='} ${expr(a.value)}`,
+    output: a => pseudo ? `OUTPUT ${a.value==='not_found'?'"找不到"':expr(a.value)}` : `print(${a.value==='not_found'?'"找不到"':a.value})`,
+    record: a => pseudo ? `OUTPUT (${expr(a.r)}, ${expr(a.c)})` : `print((${a.r}, ${a.c}))`,
+    stop: () => pseudo ? 'STOP' : 'return',
+    new: a => pseudo ? `CREATE result[${expr(a.rows)}][${expr(a.cols)}] FILLED WITH 0` : `result = [[0 for _ in range(${a.cols})] for _ in range(${a.rows})]`
+  };
+  const comments = {
+    for: '每次取下一個索引；終點不包括在內', if: '條件成立才執行下方縮排內的指令',
+    set: '先計算右方，再更新左方變數', read: '讀取格內的值；原貨架不變',
+    inspect: '標記這個地址已處理，不改貨量', write: '只更新這格；先前的值會被覆寫',
+    copy: '寫入目的座標；保留原貨架', output: '顯示數值後繼續執行',
+    record: '輸出行、列後繼續；不是 return', stop: '結束任務；餘下指令不再執行',
+    new: '建立獨立結果表，初值為 0'
+  };
+  const lines = [{index:null,text:pseudo?'// 遊戲偽代碼：索引由 0 開始；DIV 整除、MOD 餘數':'# 指令對照；return 需放在函數內'},
+    {index:null,text:pseudo?'// TO EXCLUSIVE 的終點不包括在內；VISIT 代表檢查標記':'# rows = len(grid); cols = len(grid[0]); process 代表檢查標記'}];
+  const blocks = [];
+  const close = depth => { while(blocks.length && blocks.at(-1).depth >= depth) {const c=blocks.pop();lines.push({index:null,text:'    '.repeat(c.depth)+(c.op==='for'?'END FOR':'END IF')});} };
+  cards.forEach((c,index) => {
+    if(pseudo)close(c.depth);
+    lines.push({index,text:'    '.repeat(c.depth)+render[c.op](c.args)+`  ${pseudo?'//':'#'} ${comments[c.op]}`});
+    if(pseudo && ['for','if'].includes(c.op))blocks.push(c);
+  });
+  if(pseudo)close(0);
+  return lines;
 }
+export function python(cards) { return codeLines(cards).map(line=>line.text).join('\n'); }
