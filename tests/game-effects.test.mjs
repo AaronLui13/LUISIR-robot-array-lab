@@ -7,7 +7,7 @@ import { stepEffect } from '../src/game-effects.mjs';
 test('scan and output effects reflect new events, not retained cursor state',()=>{
   const frames=run(dataFor(0),solution(0));
   assert.equal(stepEffect(frames[0],frames[1]).kind,'read');
-  assert.deepEqual(stepEffect(frames[1],frames[2]),{kind:'output',label:'送出結果',value:4});
+  assert.deepEqual(stepEffect(frames[1],frames[2]),{kind:'output',label:'輸出結果',value:4});
   assert.equal(stepEffect(frames[2],frames[2]),null);
   assert.equal(stepEffect(frames[2],frames[1]),null,'undo does not claim a new output');
   const scan=run(dataFor(3),solution(3));

@@ -46,3 +46,11 @@
 
 - 補指令步驟保留完整貨架，電腦版並排、390×844 手機版上下排列；標示「執行前」，顯示原始資料並隱藏上次執行的走訪次數。
 - 瀏覽器確認 00 可一邊對照貨架一邊填索引，試行一步後返回修改仍顯示參考圖；手機文件寬度等於視窗寬度，未觀察到 console error。
+
+## 2026-09-20 classroom terminology alignment
+
+- ESLint passes; all 63 tests pass, including DIV/MOD aliases, comparison aliases, short-circuit bounds checks, comma-index access and mission assessment on additional datasets.
+- Browser: mission 08 filled with `index DIV cols` and `index MOD cols`; four steps output (2,1), then assessment confirms the same method passes new data.
+- Mobile 390×844: note reference, 0-based rule, primary next-step button and shelf remain legible; document width is 390 with no horizontal overflow.
+- Terminology follows the reviewed Notion chapters. Game instructions remain zero-based with exclusive loop endpoints; notes using one-based inclusive pseudocode are explicitly distinguished.
+- Stop is a game task termination card, not a position-returning function; no new return-value execution or one-based mode was introduced.
