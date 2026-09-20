@@ -46,8 +46,8 @@ test('later scaffolds require formulas and conditions; independent mode starts e
 });
 test('pseudocode closes nested blocks and maps executable lines to cards',()=>{
   const lines=codeLines(solution(5),'pseudo');
-  assert.equal(lines.filter(l=>l.text.trim()==='END FOR').length,2);
-  assert.equal(lines.filter(l=>l.text.trim()==='END IF').length,2);
+  assert.equal(lines.filter(l=>l.text.trim()==='結束循環').length,2);
+  assert.equal(lines.filter(l=>l.text.trim()==='結束如果').length,2);
   assert.deepEqual(lines.filter(l=>l.index!==null).map(l=>l.index),solution(5).map((_,i)=>i));
   assert.match(codeLines(solution(8),'pseudo').map(l=>l.text).join('\n'),/DIV cols/);
   const positionLine=codeLines(solution(8),'python').find(l=>l.index===3).text;

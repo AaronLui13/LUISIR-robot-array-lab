@@ -49,3 +49,4 @@
 }
 
 .flow-guide>.primary{flex-shrink:0}.optional-prediction{margin-top:14px;font-size:12px}@media(max-width:680px){.flow-guide>.primary{margin-top:12px;width:100%}}
+.teaching-reference{font-size:12px;line-height:1.8;color:var(--muted);margin:10px 0}.teaching-reference span{display:block}.teaching-reference a{color:var(--teal)}.input-syntax{font-size:12px;line-height:1.8;color:var(--muted);margin:0 0 12px}

@@ -8,7 +8,7 @@ export function stepEffect(before, after) {
   }
   if (after.visited.length > before.visited.length) return { kind:'scan', label:'掃描貨位', position:after.visited.at(-1) };
   if (after.reads.length > before.reads.length) return { kind:'read', label:'讀取資料', position:after.reads.at(-1) };
-  if (after.outputs.length > before.outputs.length) return { kind:'output', label:'送出結果', value:after.outputs.at(-1) };
+  if (after.outputs.length > before.outputs.length) return { kind:'output', label:'輸出結果', value:after.outputs.at(-1) };
   return null;
 }
 
