@@ -54,3 +54,11 @@
 - Mobile 390×844: note reference, 0-based rule, primary next-step button and shelf remain legible; document width is 390 with no horizontal overflow.
 - Terminology follows the reviewed Notion chapters. Game instructions remain zero-based with exclusive loop endpoints; notes using one-based inclusive pseudocode are explicitly distinguished.
 - Stop is a game task termination card, not a position-returning function; no new return-value execution or one-based mode was introduced.
+
+## Blockly input method
+
+- Real Blockly headless workspaces round-trip every mission solution and variant; all retain correct assessment against alternate datasets.
+- Tests cover incomplete gaps, dropdown edits, expression precedence, chained comparison preservation, short-circuit bounds checks, invalid text, invalid indentation, loose block persistence and loose blocks surviving typing edits.
+- Browser mission 01: choose (1,3) with Blockly dropdowns, switch to typing and back, reload, execute six steps and receive a correct result.
+- Browser native pointer interaction selects dropdown values and drags a toolbox block onto the workspace; a loose block produces an actionable warning.
+- At 390px width the editor does not overflow the page; the persistent mode switch stays visible and Blockly provides its own scrolling and zoom controls.

@@ -3,7 +3,7 @@ import { CARD_TYPES, MISSIONS } from './missions.mjs';
 const KEY = 'luisir-array-drafts-v2';
 const validMission = (id, v) => Number.isInteger(id) && id >= 0 && id < MISSIONS.length && Number.isInteger(v) && v >= 0 && v < (MISSIONS[id].variants?.length || 1);
 export function validDraft(d) {
-  return !!d && ['scaffold','arrange','blank'].includes(d.mode) &&
+  return !!d && (!d.blockDraft || (typeof d.blockDraft.signature==='string' && d.blockDraft.snapshot && JSON.stringify(d.blockDraft).length<=500000)) && ['scaffold','arrange','blank'].includes(d.mode) &&
     Array.isArray(d.cards) && d.cards.length <= 200 && d.cards.every(c =>
       c && Object.hasOwn(CARD_TYPES,c.op) && Number.isInteger(c.depth) && c.depth >= 0 && c.depth <= 8 &&
       c.args && Object.keys(c.args).length === Object.keys(CARD_TYPES[c.op].args).length &&

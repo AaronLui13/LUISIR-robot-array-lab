@@ -2,6 +2,8 @@ import { run, initial, clone, codeLines, equal, card } from './engine.mjs';
 import { MISSIONS, LESSONS, dataFor, starter, assess, CARD_TYPES, FIELD_LABELS } from './missions.mjs';
 import { predictionAnswer, indexGoal, explanations, hint, startingCards, indexMapping } from './learning.mjs';
 import { readProgress, writeProgress } from './progress.mjs';
+import { mountBlockly } from './blockly-editor.mjs';
+import { cardsToBlocks, workspaceSnapshot } from './blocks-model.mjs';
 import { teachingReferences } from './teaching.mjs';
 import { predictionIssue, nextTask } from './flow.mjs';
 import { stepEffect, robotMarkup, createGameAnimator } from './game-effects.mjs';
@@ -15,15 +17,32 @@ let progress=readProgress(storage)||{version:2,id:0,v:0,drafts:{}};
 const animator=createGameAnimator(), motionQuery=window.matchMedia('(prefers-reduced-motion: reduce)');
 let motionOn=true;try{motionOn=storage?.getItem('luisir-array-motion')!=='off';}catch{/* Motion remains optional. */}
 let welcome=true,phase='predict',flowError='';
+let editor='blocks',blockEditor=null,blockDraft=null,blockIssue='',mountedCards='';
+try{editor=storage?.getItem('luisir-array-editor')==='type'?'type':'blocks';}catch{/* Optional preference. */}
+function acceptBlocks(value){
+ blockIssue=value.issue||'';
+ if(value.cards){if(!equal(cards,value.cards)){cards=value.cards;invalidate();}blockDraft={signature:JSON.stringify(cards),snapshot:value.snapshot};persist();}
+ if(value.cards){const count=$('.card-count');if(count)count.textContent=`${cards.length} 張卡`;const code=$('.code-view');if(code)code.innerHTML=codeLines(cards,format).map(line=>`<span class="code-line">${escape(line.text)}</span>`).join('');}
+ const status=$('#block-status');if(status)status.textContent=blockIssue||'點選積木內的選單，或從上方拖入算式；完成後按「下一步」。';
+}
+function syncBlocks(){if(blockEditor){try{acceptBlocks(blockEditor.read());}catch(error){blockIssue=error.message;}}}
+function releaseBlocks(){
+ if(!blockEditor)return;
+ if(mountedCards===JSON.stringify(cards)||blockDraft?.signature===JSON.stringify(cards))syncBlocks();
+ blockEditor.dispose();blockEditor=null;
+}
+function discardBlocks(){if(blockEditor){blockEditor.dispose();blockEditor=null;}blockDraft=null;blockIssue='';}
+function editorSwitch(){return `<div class="editor-switch" role="group" aria-label="編程方式"><span>編程方式</span><button data-editor="blocks" aria-pressed="${editor==='blocks'}">積木 Blockly</button><button data-editor="type" aria-pressed="${editor==='type'}">自行輸入</button></div>`;}
+
 let lastScene=null,runVersion=0,pendingCelebration=false;
 const motionEnabled=()=>motionOn&&!motionQuery.matches;
 let storageOK=true, format='pseudo', speed=600, advanced=false, mappingBase=0, mappingPosition=0, unfolded=false;
-function persist(){progress.id=id;progress.v=v;progress.drafts[`${id}:${v}`]={cards:clone(cards),mode,prediction,locked,selected:clone(selected)};storageOK=writeProgress(storage,progress);}
-function restoreDraft(){const draft=progress.drafts[`${id}:${v}`];mode=draft?.mode||'scaffold';cards=draft?clone(draft.cards):startingCards(id,v,mode);prediction=draft?.prediction||'';locked=draft?.locked||false;selected=draft?clone(draft.selected):[];predictedCorrect=locked&&normalize(prediction)===normalize(predAnswer());phase=locked?'build':'predict';}
+function persist(){progress.id=id;progress.v=v;progress.drafts[`${id}:${v}`]={cards:clone(cards),mode,prediction,locked,selected:clone(selected),...(blockDraft?{blockDraft}: {})};storageOK=writeProgress(storage,progress);}
+function restoreDraft(){const draft=progress.drafts[`${id}:${v}`];blockDraft=draft?.blockDraft||null;blockIssue='';mode=draft?.mode||'scaffold';cards=draft?clone(draft.cards):startingCards(id,v,mode);prediction=draft?.prediction||'';locked=draft?.locked||false;selected=draft?clone(draft.selected):[];predictedCorrect=locked&&normalize(prediction)===normalize(predAnswer());phase=locked?'build':'predict';}
 const mission=()=>MISSIONS[id],state=()=>frames[cursor],grid=()=>dataFor(id,v);
 function stop(){if(timer)clearInterval(timer);timer=null;}
 function invalidate(){stop();runVersion++;pendingCelebration=false;frames=[initial(grid())];cursor=0;result=null;quiz=null;}
-function load(next,variant=0){persist();stop();welcome=false;flowError='';id=next;v=variant;restoreDraft();hints=0;drawer=false;advanced=false;mappingPosition=0;unfolded=false;invalidate();render();window.scrollTo({top:0,behavior:'instant'});}
+function load(next,variant=0){releaseBlocks();persist();stop();welcome=false;flowError='';id=next;v=variant;restoreDraft();hints=0;drawer=false;advanced=false;mappingPosition=0;unfolded=false;invalidate();render();window.scrollTo({top:0,behavior:'instant'});}
 function save(){try{localStorage.setItem('luisir-array-badges',JSON.stringify(saved));}catch{/* Do not require browser storage. */}}
 function predAnswer(){return predictionAnswer(id,v);}
 function predPrompt(){if(id===13)return `${v===0?'左右':'上下'}翻轉後 C 的位置？（行,列）`;if(id===14)return `${v===0?'轉置':'順時針 90°'}後 C 的位置？（行,列）`;if(id===8)return `每行 ${grid()[0].length} 格時，編號 9 的位置？（行,列）`;if(id===9)return '這次搬運的候選位置？（行,列）';if(id===17)return '本組資料首個空位的一維編號是？';return mission().predict;}
@@ -80,17 +99,18 @@ function monitorView(s){
 function renderWelcome(){
  animator.clear();
  $('#app').innerHTML=`<main class="welcome-screen"><div class="welcome-brand">LUI SIR · 2D ARRAY LAB</div>${robotMarkup('welcome-robot')}<h1>跟機械人學二維陣列</h1><p>每次只做一件事。先找貨位，再一步步學會控制機械人。</p><div class="welcome-path"><span>看貨架</span><span>做預測</span><span>補指令</span><span>看結果</span></div><button class="primary welcome-start" id="start-first">由第一關開始 →</button>${Object.keys(progress.drafts).length?`<button class="quiet" id="continue-task">繼續上次：${String(id).padStart(2,'0')} ${mission().title}</button>`:''}<button class="text-button" id="choose-task">老師／熟悉玩法：選擇關卡</button><small>不限時 · 可以重試 · 無需帳戶</small></main>`;
- $('#start-first').onclick=()=>{welcome=false;load(0);phase='predict';mode='scaffold';cards=starter(0);prediction='';locked=false;selected=[];invalidate();render();};
+ $('#start-first').onclick=()=>{welcome=false;load(0);phase='predict';mode='scaffold';discardBlocks();cards=starter(0);prediction='';locked=false;selected=[];invalidate();render();};
  if($('#continue-task'))$('#continue-task').onclick=()=>{welcome=false;render();};
  $('#choose-task').onclick=()=>{welcome=false;drawer=true;render();};
 }
 function flowView(){
- const titles={predict:id===0&&!locked&&selected.length<2?`先點選貨位 (${[[0,2],[2,0]][selected.length].join(',')})`:'先看貨架，寫下你的預測',build:mode==='arrange'?'排好指令的次序':mode==='blank'?'組合你的指令':'補完指令中的橙色空格',run:'按「執行一步」，看機械人怎樣做',reflect:result?.ok?(quiz===mission().correct?'完成了！準備下一個挑戰':'結果正確，再回答一個問題'):'找出原因，再試一次'};
- const descriptions={predict:id===0&&!locked&&selected.length<2?'先找行，再找列。橙框就是這次要找的貨位。':'格內內容是元素值；行、列索引表示位置。預測不必一次答對。',build:mode==='arrange'?'用上下移動按鈕排好指令，再試行。':mode==='blank'?'從卡庫加入需要的指令，再試行。':'對照貨架圖，填好橙色欄位，再按「下一步：執行指令」。',run:'每按一次，只做一小步。留意貨架和目前指令。',reflect:result?.ok?(quiz===mission().correct?'按下方綠色按鈕，繼續下一步。':'說清楚方法的意思，就可以繼續下一個任務。'):'按「返回修改指令」，保留你的想法繼續修正。'};
+ const titles={predict:id===0&&!locked&&selected.length<2?`先點選貨位 (${[[0,2],[2,0]][selected.length].join(',')})`:'先看貨架，寫下你的預測',build:editor==='blocks'?'用積木完成指令':mode==='arrange'?'排好指令的次序':mode==='blank'?'組合你的指令':'補完指令中的橙色空格',run:'按「執行一步」，看機械人怎樣做',reflect:result?.ok?(quiz===mission().correct?'完成了！準備下一個挑戰':'結果正確，再回答一個問題'):'找出原因，再試一次'};
+ const descriptions={predict:id===0&&!locked&&selected.length<2?'先找行，再找列。橙框就是這次要找的貨位。':'格內內容是元素值；行、列索引表示位置。預測不必一次答對。',build:editor==='blocks'?'點選選單揀數值或變量，拖入算式積木，再按「下一步：執行指令」。':mode==='arrange'?'用上下移動按鈕排好指令，再試行。':mode==='blank'?'從卡庫加入需要的指令，再試行。':'對照貨架圖，填好橙色欄位，再按「下一步：執行指令」。',run:'每按一次，只做一小步。留意貨架和目前指令。',reflect:result?.ok?(quiz===mission().correct?'按下方綠色按鈕，繼續下一步。':'說清楚方法的意思，就可以繼續下一個任務。'):'按「返回修改指令」，保留你的想法繼續修正。'};
  return `<div class="flow-guide" tabindex="-1"><div><span>現在要做的事</span><h2>${titles[phase]}</h2><p>${descriptions[phase]}</p></div>${phase==='predict'&&locked?'<button class="text-button" data-action="back-build">繼續補指令 →</button>':phase==='build'?'<button class="primary" data-action="ready-run">下一步：執行指令 →</button>':phase==='run'||phase==='reflect'?'<button class="text-button" data-action="back-build">← 返回修改指令</button>':''}</div>${flowError?`<p class="flow-error" role="alert">${escape(flowError)}</p>`:''}`;
 }
 function goPhase(next){stop();phase=next;flowError='';render();window.scrollTo({top:0,behavior:'instant'});$('.flow-guide')?.focus({preventScroll:true});}
 function render(){
+ releaseBlocks();
  if(welcome){renderWelcome();return;}
  const beforeRobot=animator.capture(),sceneKey=`${id}:${v}:${runVersion}`;
  const effect=lastScene?.key===sceneKey&&cursor===lastScene.cursor+1?stepEffect(lastScene.state,state()):null;
@@ -107,7 +127,8 @@ function render(){
  ${drawer?'<button class="drawer-backdrop" data-action="drawer" aria-label="收起課程地圖"></button>':''}
  <div class="shell guided-shell">
  <nav class="rail ${drawer?'open':''}" aria-label="課程地圖"><button class="text-button rail-close" data-action="drawer">關閉 ×</button><div class="rail-title">倉庫訓練計劃 <small>8 課 · 18 個任務</small></div>${LESSONS.map((name,l)=>`<section class="lesson"><h2><span>${String(l).padStart(2,'0')}</span> ${name}</h2>${MISSIONS.filter(x=>x.lesson===l).map(x=>`<button data-mission="${x.id}" class="mission-link ${id===x.id?'current':''}" ${id===x.id?'aria-current="step"':''}><span>${String(x.id).padStart(2,'0')}</span>${x.title}<span class="mission-status">${saved[x.id]?.complete?'✓':id===x.id?'●':''}</span></button>`).join('')}</section>`).join('')}<p class="rail-note">不限時 · 重試不扣分<br>紀錄只保存在這部裝置</p></nav>
- <main id="current-task" class="guided phase-${phase} ${advanced?'show-advanced':''} mode-${mode}">
+ <main id="current-task" class="guided phase-${phase} ${advanced?'show-advanced':''} mode-${mode} editor-${editor}">
+ ${editorSwitch()}
  <p class="save-note ${storageOK?'':'storage-error'}" role="status">${storageOK?'草稿已在此裝置儲存；重開會接續關卡，執行由第 0 步開始。':'這個瀏覽器暫時無法儲存；請保留本頁，避免遺失草稿。'}</p>
  <section class="mission-heading"><div><div class="eyebrow">${id===17?'連續任務':'每次任務重設資料'} <span>/</span> ${LESSONS[stage]}</div><h1><span>${String(id).padStart(2,'0')}</span> ${m.title}</h1><p>${viewBrief()}</p></div><div class="task-stamp">ARRAY<br><strong>${String(id).padStart(2,'0')}</strong></div></section>
  <div class="workflow" aria-label="遊玩流程">${[['predict','預測'],['build','補指令'],['run','執行'],['reflect','結果']].map(([key,label],i)=>`<span class="${phase===key?'on':''}" ${phase===key?'aria-current="step"':''}><b>${i+1}</b>${label}</span>`).join('')}</div>
@@ -122,6 +143,7 @@ function render(){
  ${phase==='build'?'<button class="text-button optional-prediction" data-action="back-predict">修改預測（選用）</button>':''}
  <div class="prediction ${id===0&&selected.length<2&&!locked?'waiting-for-selection':''}"><div class="micro-heading"><span>01 / 先預測</span>${locked?'<b>已鎖定</b>':'<b>執行前</b>'}</div><label for="prediction">${predPrompt()}</label><input id="prediction" value="${escape(prediction)}" placeholder="填入你的預測" ${locked?'disabled':''} autocomplete="off"><button class="${locked?'quiet':'dark'}" data-action="predict">${locked?'修改預測':'確認預測，下一步 →'}</button></div></div></section>
  <section class="panel workspace" id="workspace"><div class="panel-heading"><h2>指令工作區 <small>Program</small></h2><span class="card-count">${cards.length} 張卡</span></div><div class="workspace-toolbar"><label>編排方式 <select id="mode"><option value="scaffold" ${mode==='scaffold'?'selected':''}>補完關鍵步驟</option><option value="arrange" ${mode==='arrange'?'selected':''}>排卡練習</option><option value="blank" ${mode==='blank'?'selected':''}>自由編排</option></select></label><button class="text-button" data-action="restore">重設指令</button></div><p class="workspace-note">拖動卡片排序，或用 ↑ ↓；用 → 縮排，放入循環／如果內。</p>
+ ${editor==='blocks'&&phase==='build'?'<div class="block-editor"><p id="block-status" role="status">載入積木中…</p><button class="outline block-find-gap" data-action="find-gap">找下一個空格</button><div id="blockly-workspace" aria-label="Blockly 積木工作區"></div></div>':''}
  ${monitorView(s)}
  <div class="program" aria-label="指令卡列表">${cards.length?cards.map((c,index)=>`<article class="command ${Object.values(scaffold[index]?.args||{}).includes('?')?'has-gap':''} ${s.card===index?'executing':''} ${['for','if'].includes(c.op)?'block-card':''}" style="--depth:${c.depth}" draggable="${advanced||mode!=='scaffold'}" data-card="${index}"><div class="command-title"><span class="line-number">${index+1}</span><b>${CARD_TYPES[c.op].label}</b><small>${CARD_TYPES[c.op].english}</small><div class="command-actions">${[['up','↑','上移'],['down','↓','下移'],['out','←','減少縮排'],['in','→','增加縮排'],['remove','×','移除']].map(([action,text,label])=>`<button data-edit="${action}" data-index="${index}" aria-label="第 ${index+1} 張卡${label}" ${action==='up'&&index===0||action==='down'&&index===cards.length-1||action==='out'&&c.depth===0?'disabled':''}>${text}</button>`).join('')}</div></div><p class="command-summary">${escape(codeLines([c],'pseudo').find(line=>line.index===0).text.split('  註：')[0].trim())}</p><div class="command-fields">${Object.entries(c.args).map(([key,value])=>`<label class="${mode==='scaffold'&&scaffold[index]?.args[key]!=='?'?'provided-field':''}">${FIELD_LABELS[key]}<input data-field="${key}" data-index="${index}" value="${escape(value)}" class="${value.includes('?')?'gap':''}" aria-label="第 ${index+1} 張卡 ${FIELD_LABELS[key]}" autocomplete="off" spellcheck="false"></label>`).join('')}</div></article>`).join(''):'<div class="empty-program">從下方選一張指令卡開始。<br><small>點一下加入；不需要拖拉也能完成。</small></div>'}</div>
  <div class="build-next"><p class="input-syntax">算式可用 DIV／MOD 或 //／%；相等比較可用 = 或 ==。grid 即筆記的 A；rows 為行數 R，cols 為列數 C。</p><div class="hints"><button class="text-button" data-action="hint">需要一點提示？</button>${hints>0?`<p>${hintText()}</p>`:''}</div><button class="primary full" data-action="ready-run">下一步：執行指令 →</button></div>
@@ -138,6 +160,13 @@ function render(){
  <footer><span>Lui Sir · 高中 ICT · 二維陣列</span><span>無帳戶 · 無計時 · 裝置本機紀錄</span><a href="./LICENSE">MIT © 2026 Aaron Lui</a></footer>
  </main></div>`;
  bind();
+ if(editor==='blocks'&&phase==='build'){
+  try{
+   mountedCards=JSON.stringify(cards);
+   blockEditor=mountBlockly($('#blockly-workspace'),{cards,stage,snapshot:workspaceSnapshot(cards,blockDraft),onChange:acceptBlocks});
+   const value=blockEditor.read();blockIssue=value.issue;$('#block-status').textContent=blockIssue||'點選積木內的選單，或從上方拖入算式；完成後按「下一步」。';
+  }catch(error){blockIssue=error.message;$('#block-status').textContent=blockIssue+' 可按上方「自行輸入」繼續。';}
+ }
  document.querySelectorAll('details[data-details]').forEach(d=>{if(openDetails.has(d.dataset.details))d.open=openDetails.get(d.dataset.details);});
  const map=$('.mapping-scroll');if(map){map.scrollLeft=mapScroll;const point=map.querySelector('.selected');if(unfolded&&point){const left=point.offsetLeft;if(left<map.scrollLeft||left+point.offsetWidth>map.scrollLeft+map.clientWidth)map.scrollLeft=Math.max(0,left-map.clientWidth/2);}}
  if(motionEnabled())document.querySelectorAll('[data-map]').forEach(el=>{
@@ -158,6 +187,12 @@ function render(){
 }
 function hintText(){return escape(hint(id,v,hints,mode));}
 function bind(){
+ document.querySelectorAll('[data-editor]').forEach(b=>b.onclick=()=>{
+  const next=b.dataset.editor;if(next===editor)return;
+  if(next==='blocks'){try{cardsToBlocks(cards);}catch(error){flowError=error.message;render();return;}}
+  releaseBlocks();editor=next;blockIssue='';flowError='';try{storage?.setItem('luisir-array-editor',editor);}catch{/* Optional preference. */}
+  if(phase==='run'||phase==='reflect'){invalidate();phase='build';}render();
+ });
  document.querySelectorAll('[data-mission]').forEach(b=>b.onclick=()=>load(Number(b.dataset.mission)));
  document.querySelectorAll('[data-variant]').forEach(b=>b.onclick=()=>load(id,Number(b.dataset.variant)));
  $('#prediction').oninput=e=>{prediction=e.target.value;persist();};
@@ -165,7 +200,7 @@ function bind(){
  $('#code-format').onchange=e=>{format=e.target.value;render();};
  if($('#mapping-base'))$('#mapping-base').onchange=e=>{mappingBase=Number(e.target.value);render();};
  document.querySelectorAll('[data-map]').forEach(b=>b.onclick=()=>{mappingPosition=Number(b.dataset.map);render();});
- $('#mode').onchange=e=>{mode=e.target.value;cards=startingCards(id,v,mode);invalidate();render();};
+ $('#mode').onchange=e=>{discardBlocks();mode=e.target.value;cards=startingCards(id,v,mode);invalidate();render();};
  document.querySelectorAll('[data-cell]').forEach(b=>b.onclick=()=>{if(b.dataset.table!=='grid')return;const p=b.dataset.cell.split(',').map(Number);flowError='';if(!locked){if(id===0){const target=[[0,2],[2,0]][selected.length];if(target&&!equal(target,p)){flowError=`這格是 (${p.join(',')})。請先找橙框的 (${target.join(',')})。`;}else if(target)selected.push(p);}else selected=[p];}state().current=p;render();if(id===0&&phase==='predict'&&!locked&&!flowError){const next=selected.length<2?$('.cell.target'):$('#prediction');next?.focus({preventScroll:true});next?.scrollIntoView({block:'nearest',behavior:'instant'});}});
  document.querySelectorAll('[data-field]').forEach(input=>input.oninput=e=>{const index=input.dataset.index,field=input.dataset.field,start=e.target.selectionStart,end=e.target.selectionEnd;cards[Number(index)].args[field]=e.target.value;invalidate();render();const fresh=document.querySelector(`[data-field="${field}"][data-index="${index}"]`);fresh.focus({preventScroll:true});fresh.setSelectionRange(start,end);});
  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.index),a=b.dataset.edit;if(a==='remove')cards.splice(i,1);if(a==='in')cards[i].depth=Math.min(8,cards[i].depth+1);if(a==='out')cards[i].depth=Math.max(0,cards[i].depth-1);if(a==='up'&&i>0)[cards[i-1],cards[i]]=[cards[i],cards[i-1]];if(a==='down'&&i<cards.length-1)[cards[i+1],cards[i]]=[cards[i],cards[i+1]];invalidate();render();});
@@ -177,6 +212,7 @@ function bind(){
  document.querySelectorAll('[data-quiz]').forEach(b=>b.onclick=()=>{const wasCorrect=quiz===mission().correct;quiz=Number(b.dataset.quiz);pendingCelebration=quiz===mission().correct&&!wasCorrect;if(quiz===mission().correct){const previous=saved[id]||{variants:[]};const variants=[...new Set([...(previous.variants||[]),v])];if([7,8,17].includes(id))variants.push(0,1);saved[id]={variants:[...new Set(variants)],complete:new Set(variants).size>=(mission().variants?.length||1),prediction:predictedCorrect||previous.prediction};save();}render();});
  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{
   switch(b.dataset.action){
+   case 'find-gap':if(!blockEditor?.focusGap())$('#block-status').textContent='已沒有 ? 空格。可以按「下一步」執行並核對結果。';break;
    case 'motion':motionOn=!motionOn;try{storage?.setItem('luisir-array-motion',motionOn?'on':'off');}catch{/* Optional preference. */}render();break;
    case 'drawer':drawer=!drawer;render();break;
    case 'advanced':advanced=!advanced;render();break;
@@ -185,20 +221,22 @@ function bind(){
    case 'map-next':mappingPosition=Math.min(grid().flat().length-1,mappingPosition+1);render();break;
    case 'next':{const next=nextTask(id,mission().variants?.length||1,saved[id]);if(next)load(next.id,next.v);break;}
    case 'next-variant':load(id,(v+1)%(mission().variants?.length||1));break;
-   case 'independent':phase='build';mode='blank';cards=[];hints=0;invalidate();render();break;
+   case 'independent':discardBlocks();phase='build';mode='blank';cards=[];hints=0;invalidate();render();break;
    case 'back-predict':goPhase('predict');break;
    case 'back-build':goPhase('build');break;
-   case 'ready-run':if(!cards.length||cards.some(c=>Object.values(c.args).some(value=>!value.trim()||value.includes('?')))){flowError='還有未完成的欄位。先把橙色 ? 換成你的值或算式。';render();}else{invalidate();if(begin())goPhase('run');else{const message=result?.message;locked=false;goPhase('predict');flowError=message||'請重新確認預測。';render();}}break;
+   case 'ready-run':if(editor==='blocks'&&blockIssue){flowError=blockIssue;render();break;}if(!cards.length||cards.some(c=>Object.values(c.args).some(value=>!value.trim()||value.includes('?')))){flowError='還有未完成的欄位。請選擇積木內的數值／變量，或把 ? 換成你的算式。';render();}else{invalidate();if(begin())goPhase('run');else{const message=result?.message;locked=false;goPhase('predict');flowError=message||'請重新確認預測。';render();}}break;
    case 'predict':if(locked){locked=false;selected=[];invalidate();render();}else{flowError=predictionIssue(id,selected,prediction);if(flowError){render();break;}locked=true;predictedCorrect=normalize(prediction)===normalize(predAnswer());result=null;goPhase('build');}break;
    case 'step':step();break;case 'run':execute();break;case 'verify':verify();break;
    case 'undo':stop();cursor=Math.max(0,cursor-1);result=null;quiz=null;render();break;
    case 'reset':invalidate();render();break;
-   case 'restore':cards=startingCards(id,v,mode);invalidate();render();break;
+   case 'restore':discardBlocks();cards=startingCards(id,v,mode);invalidate();render();break;
    case 'hint':hints=Math.min(3,hints+1);render();break;
    case 'overwrite':phase='reflect';stop();frames=run(grid(),[card('write',{r:'0',c:'0',value:'grid[1][2]'}),card('write',{r:'1',c:'2',value:'grid[0][0]'})]);cursor=frames.length-1;result={ok:false,message:'示範：2 已被 5 覆寫，最後兩格都是 5。按「返回修改指令」，使用 temp 保存原值再試。'};render();break;
   }
  });
 }
+ $('#app').addEventListener('click',e=>{if(e.target.closest('[data-action],[data-mission],[data-variant],[data-editor]'))syncBlocks();},{capture:true});
+window.addEventListener('pagehide',()=>{syncBlocks();persist();});
 motionQuery.addEventListener('change',()=>render());
 let resizeFrame;window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>render());});
 id=progress.id;v=progress.v;restoreDraft();invalidate();
