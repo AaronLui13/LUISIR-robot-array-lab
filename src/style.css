@@ -45,17 +45,31 @@
  .phase-build .warehouse .coordinate-note{margin-bottom:5px}
  .phase-build .warehouse .legend{margin-top:10px}
  .phase-build .warehouse .selection-info{margin-top:10px;padding:7px 10px}
- .phase-build .mission-heading p{display:none}
 }
 
 .flow-guide>.primary{flex-shrink:0}.optional-prediction{margin-top:14px;font-size:12px}@media(max-width:680px){.flow-guide>.primary{margin-top:12px;width:100%}}
 .teaching-reference{font-size:12px;line-height:1.8;color:var(--muted);margin:10px 0}.teaching-reference span{display:block}.teaching-reference a{color:var(--teal)}.input-syntax{font-size:12px;line-height:1.8;color:var(--muted);margin:0 0 12px}
 
 /* Both input methods remain reachable throughout the lesson. */
-.editor-switch{position:sticky;top:0;z-index:24;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 16px;box-shadow:0 2px 8px #15323e12}
+.editor-switch{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 16px}
 .editor-switch>span{font-size:14px;margin-right:8px}.editor-switch button{min-height:44px;padding:9px 16px;border:1px solid #acbfc3;border-radius:6px;background:white;font-weight:700}.editor-switch button[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
 .block-editor{padding:12px}.block-editor>p{font-size:15px;line-height:1.7;margin:0 0 12px;color:var(--ink)}#blockly-workspace{width:100%;height:580px;border:1px solid var(--line);border-radius:6px;overflow:hidden;text-align:left}
 .phase-build.editor-blocks .program,.phase-build.editor-blocks .palette,.phase-build.editor-blocks .workspace-note{display:none!important}.phase-build.editor-blocks .workbench{grid-template-columns:minmax(230px,.7fr) minmax(0,1.5fr);max-width:none}.blocklyToolbox{font-family:inherit!important}.blocklyTreeLabel{font-size:15px!important}.blocklyWidgetDiv,.blocklyDropDownDiv,.blocklyTooltipDiv{z-index:50!important}
 @media(max-width:680px){.editor-switch{padding:8px;gap:6px}.editor-switch>span{width:100%;text-align:center;margin:0}.editor-switch button{flex:1;padding:8px;font-size:15px}#blockly-workspace{height:500px}.block-editor{padding:8px}.phase-build.editor-blocks .workbench{display:flex}.blocklyTreeLabel{font-size:13px!important}}
 
 .block-find-gap{margin:0 0 12px;font-size:15px}.blocklyFlyoutLabelText{font-family:inherit}
+
+/* Start with one decision; reveal the complete programming tools on request. */
+.short-editor .editor-switch,.short-editor .input-syntax,.short-editor .card-count{display:none}
+.guided-inputs{padding:18px}.guided-command{border:1px solid #e0b37c;background:#fff9ed;border-radius:8px;padding:16px}.guided-command h3{margin:0;font-size:18px}.guided-command h3 small{font-size:13px;font-weight:400;margin-left:6px}.guided-command p{font-size:16px;line-height:1.8;margin:12px 0}.guided-command fieldset{border:0;margin:14px 0;padding:0;min-width:0}.guided-command legend{font-size:16px;font-weight:bold;margin-bottom:9px}.number-choices{display:flex;flex-wrap:wrap;gap:8px}.number-choices button{min-width:44px;min-height:44px;border:1px solid #acbfc3;border-radius:6px;background:white;font:bold 19px monospace}.number-choices button[aria-pressed=true]{background:var(--ink);color:white;border-color:var(--ink)}.guided-command .guided-address{border-top:1px solid #e9d1b1;padding-top:12px;margin-bottom:0;font-size:15px}.needs-attention{outline:3px solid #b55e15!important;outline-offset:4px;background:#fff0d9!important}.short-editor .build-next{padding-top:0}.short-editor.phase-build .workbench{grid-template-columns:minmax(260px,.9fr) minmax(340px,1.1fr)}
+@media(max-width:680px){
+ .editor-switch>span{width:auto;font-size:12px}.editor-switch button{font-size:13px;flex:0 1 auto}.editor-switch{padding:6px}
+ .phase-build .warehouse{position:sticky;top:0;z-index:5;box-shadow:0 3px 8px #15323e18}
+ .phase-build .warehouse .panel-heading{min-height:36px;padding:4px 12px}.phase-build .warehouse .panel-heading h2{font-size:13px}
+ .phase-build .warehouse-body{padding:6px 12px}.phase-build .warehouse .coordinate-note{display:none}
+ .phase-build .warehouse .array-table{max-width:none;gap:3px;grid-template-columns:18px repeat(var(--cols),minmax(0,1fr))}
+ .phase-build .warehouse .cell{height:44px;min-height:44px;aspect-ratio:auto;gap:1px;padding:2px}.phase-build .warehouse .cell-number{font-size:19px}.phase-build .warehouse .cell-address{font-size:9px}
+ .phase-build .warehouse .axis,.phase-build .warehouse .axis-corner{min-height:17px;font-size:11px}
+ .phase-build .warehouse .legend{margin:5px 0 0;font-size:11px}.phase-build .warehouse .selection-info,.phase-build .warehouse .optional-prediction{display:none}
+ .guided-inputs{padding:12px}.guided-command{padding:12px}.guided-command p{font-size:15px;line-height:1.7}.guided-command legend{font-size:15px}
+}

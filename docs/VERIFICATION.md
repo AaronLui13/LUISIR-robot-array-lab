@@ -2,7 +2,7 @@
 
 ## 規則測試
 
-57 項 Node 測試覆蓋所有 18 關及變式，另包含索引與算式錯誤、短路求值、縮排、步數上限、快照隔離、找不到時清空輸出、錯誤初始化、覆寫損失、非法搬運不修改資料、尺寸轉換、走訪次序、非方形變換、區域邊界政策、第二組資料及同值保留第一個。`npm test` 包含靜態建置，`npm run lint` 使用 ESLint。
+目前 73 項 Node 測試覆蓋所有 18 關及變式，另包含索引與算式錯誤、短路求值、縮排、步數上限、快照隔離、找不到時清空輸出、錯誤初始化、覆寫損失、非法搬運不修改資料、尺寸轉換、走訪次序、非方形變換、區域邊界政策、第二組資料及同值保留第一個。`npm test` 包含靜態建置，`npm run lint` 使用 ESLint。
 
 ## 瀏覽器檢查
 
@@ -62,3 +62,13 @@
 - Browser mission 01: choose (1,3) with Blockly dropdowns, switch to typing and back, reload, execute six steps and receive a correct result.
 - Browser native pointer interaction selects dropdown values and drags a toolbox block onto the workspace; a loose block produces an actionable warning.
 - At 390px width the editor does not overflow the page; the persistent mode switch stays visible and Blockly provides its own scrolling and zoom controls.
+
+## 2026-10-03 學生操作改善
+
+- 新增四組測試：簡短編輯器保留早期過關要求及錯誤選項、自訂草稿／未連接積木使用完整編輯器、漏填指令與欄位定位、按課題縮減 Blockly 選項並保留原有值。73 項通過，靜態建置及 ESLint 通過。
+- 1280×900 桌面與 390×844 手機：00 先點選兩格、預測、漏填聚焦、選錯行索引執行至失敗、返回並以 Enter 修正為 0、四步執行及概念題通過。
+- 390×844 手機：01 僅顯示待完成讀取卡；先填行再按下一步會指出列索引，並聚焦及標示列選項。展開完整 Blockly 後仍保留已填行索引；漏填積木置中並以黃色框選。自行輸入模式亦能定位文字欄位。
+- 01 填好 (1,3) 後切換回 Blockly，重新開頁接續，簡短指令保留行、列及鎖定預測；六步執行與概念題通過。
+- 02 選貨位 (1,2)、預測 5、點選貨量 5，三步執行後核對通過。完整 Blockly 的實際選單只有 ?、0–5 與已有 value；以滑鼠選 5，切換至自行輸入仍保留 5。
+- 07 的手機補指令頁顯示任務文字，下一步會指向第 4 張卡的值／算式，定位到巢狀循環內的未完成積木。390px、320px 文件寬度均等於視窗寬度；小型貨架可在捲動時保留。
+- 此次操作檢查未觀察到瀏覽器 error 或 warning。未實測實體平板、螢幕閱讀器或所有瀏覽器；較後關卡規則由自動測試覆蓋，沒有逐關重新完成瀏覽器流程。

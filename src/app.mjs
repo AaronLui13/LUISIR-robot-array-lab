@@ -7,6 +7,7 @@ import { cardsToBlocks, workspaceSnapshot } from './blocks-model.mjs';
 import { teachingReferences } from './teaching.mjs';
 import { predictionIssue, nextTask } from './flow.mjs';
 import { stepEffect, robotMarkup, createGameAnimator } from './game-effects.mjs';
+import { guidedFields, fieldChoices, firstIncomplete } from './student-guidance.mjs';
 const $ = s => document.querySelector(s);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let saved={};try{saved=JSON.parse(localStorage.getItem('luisir-array-badges')||'{}');}catch{/* Storage is optional. */}
@@ -33,6 +34,23 @@ function releaseBlocks(){
 }
 function discardBlocks(){if(blockEditor){blockEditor.dispose();blockEditor=null;}blockDraft=null;blockIssue='';}
 function editorSwitch(){return `<div class="editor-switch" role="group" aria-label="編程方式"><span>編程方式</span><button data-editor="blocks" aria-pressed="${editor==='blocks'}">積木 Blockly</button><button data-editor="type" aria-pressed="${editor==='type'}">自行輸入</button></div>`;}
+function shortFields(){return editor==='blocks'&&!advanced?guidedFields(id,v,mode,cards,blockDraft):null;}
+function guidedView(fields){
+ const index=fields[0].index,c=cards[index];
+ const notes=['填好第一次讀取的行索引。機械人會依序讀取兩格，並輸出各自的貨量。','先看橙框貨位，填好最後一次讀取的行、列索引。前兩次讀取已排好。','選擇要寫入的新貨量。機械人會補貨，再讀取同一格並輸出。'];
+ return `<div class="guided-inputs"><article class="guided-command"><h3>${CARD_TYPES[c.op].label} <small>${CARD_TYPES[c.op].english}</small></h3><p>${notes[id]}</p>${fields.map(f=>`<fieldset data-guided-field="${f.key}" data-index="${f.index}"><legend>${FIELD_LABELS[f.key]}${f.value==='?'?' · 請選擇':''}</legend><div class="number-choices">${fieldChoices(f.key,grid()).map(value=>`<button data-choice="${value}" data-field-key="${f.key}" data-index="${f.index}" aria-label="${FIELD_LABELS[f.key]} ${value}" aria-pressed="${value===f.value}">${value}</button>`).join('')}</div></fieldset>`).join('')}<p class="guided-address">目前指令：${c.op==='write'?`把 (${c.args.r}, ${c.args.c}) 的貨量設定成 ${escape(c.args.value)}`:`讀取 (${escape(c.args.r)}, ${escape(c.args.c)}) 的貨量`}</p></article></div>`;
+}
+function focusIncomplete(issue){
+ if(shortFields()){
+  const field=document.querySelector(`[data-guided-field="${issue.key}"][data-index="${issue.index}"]`);
+  field?.classList.add('needs-attention');field?.setAttribute('aria-invalid','true');
+  const button=field?.querySelector('button');button?.focus({preventScroll:true});field?.scrollIntoView({block:'nearest',behavior:'instant'});
+ }else if(blockEditor){blockEditor.focusGap(issue);}
+ else{
+  const input=document.querySelector(`[data-field="${issue.key}"][data-index="${issue.index}"]`);
+  input?.classList.add('needs-attention');input?.setAttribute('aria-invalid','true');input?.focus({preventScroll:true});input?.scrollIntoView({block:'nearest',behavior:'instant'});
+ }
+}
 
 let lastScene=null,runVersion=0,pendingCelebration=false;
 const motionEnabled=()=>motionOn&&!motionQuery.matches;
@@ -104,8 +122,8 @@ function renderWelcome(){
  $('#choose-task').onclick=()=>{welcome=false;drawer=true;render();};
 }
 function flowView(){
- const titles={predict:id===0&&!locked&&selected.length<2?`先點選貨位 (${[[0,2],[2,0]][selected.length].join(',')})`:'先看貨架，寫下你的預測',build:editor==='blocks'?'用積木完成指令':mode==='arrange'?'排好指令的次序':mode==='blank'?'組合你的指令':'補完指令中的橙色空格',run:'按「執行一步」，看機械人怎樣做',reflect:result?.ok?(quiz===mission().correct?'完成了！準備下一個挑戰':'結果正確，再回答一個問題'):'找出原因，再試一次'};
- const descriptions={predict:id===0&&!locked&&selected.length<2?'先找行，再找列。橙框就是這次要找的貨位。':'格內內容是元素值；行、列索引表示位置。預測不必一次答對。',build:editor==='blocks'?'點選選單揀數值或變量，拖入算式積木，再按「下一步：執行指令」。':mode==='arrange'?'用上下移動按鈕排好指令，再試行。':mode==='blank'?'從卡庫加入需要的指令，再試行。':'對照貨架圖，填好橙色欄位，再按「下一步：執行指令」。',run:'每按一次，只做一小步。留意貨架和目前指令。',reflect:result?.ok?(quiz===mission().correct?'按下方綠色按鈕，繼續下一步。':'說清楚方法的意思，就可以繼續下一個任務。'):'按「返回修改指令」，保留你的想法繼續修正。'};
+ const titles={predict:id===0&&!locked&&selected.length<2?`先點選貨位 (${[[0,2],[2,0]][selected.length].join(',')})`:'先看貨架，寫下你的預測',build:shortFields()?'完成這張指令':editor==='blocks'?'用積木完成指令':mode==='arrange'?'排好指令的次序':mode==='blank'?'組合你的指令':'補完指令中的橙色空格',run:'按「執行一步」，看機械人怎樣做',reflect:result?.ok?(quiz===mission().correct?'完成了！準備下一個挑戰':'結果正確，再回答一個問題'):'找出原因，再試一次'};
+ const descriptions={predict:id===0&&!locked&&selected.length<2?'先找行，再找列。橙框就是這次要找的貨位。':'格內內容是元素值；行、列索引表示位置。預測不必一次答對。',build:shortFields()?'對照貨架，點選需要的數字，再執行看結果。':editor==='blocks'?'點選選單揀數值或變量，拖入算式積木，再按「下一步：執行指令」。':mode==='arrange'?'用上下移動按鈕排好指令，再試行。':mode==='blank'?'從卡庫加入需要的指令，再試行。':'對照貨架圖，填好橙色欄位，再按「下一步：執行指令」。',run:'每按一次，只做一小步。留意貨架和目前指令。',reflect:result?.ok?(quiz===mission().correct?'按下方綠色按鈕，繼續下一步。':'說清楚方法的意思，就可以繼續下一個任務。'):'按「返回修改指令」，保留你的想法繼續修正。'};
  return `<div class="flow-guide" tabindex="-1"><div><span>現在要做的事</span><h2>${titles[phase]}</h2><p>${descriptions[phase]}</p></div>${phase==='predict'&&locked?'<button class="text-button" data-action="back-build">繼續補指令 →</button>':phase==='build'?'<button class="primary" data-action="ready-run">下一步：執行指令 →</button>':phase==='run'||phase==='reflect'?'<button class="text-button" data-action="back-build">← 返回修改指令</button>':''}</div>${flowError?`<p class="flow-error" role="alert">${escape(flowError)}</p>`:''}`;
 }
 function goPhase(next){stop();phase=next;flowError='';render();window.scrollTo({top:0,behavior:'instant'});$('.flow-guide')?.focus({preventScroll:true});}
@@ -119,7 +137,7 @@ function render(){
  const oldScroll=$('.program')?.scrollTop||0,codeScroll=$('.code-view')?.scrollTop||0,mapScroll=$('.mapping-scroll')?.scrollLeft||0,focusId=focused?.id;
  const openDetails=new Map([...document.querySelectorAll('details[data-details]')].map(d=>[d.dataset.details,d.open]));
  persist();
- const scaffold=starter(id,v);
+ const scaffold=starter(id,v),short=shortFields();
  const m=mission(),s=state(),done=Object.keys(saved).filter(k=>saved[k]?.complete).length,stage=m.lesson;
  $('#app').innerHTML=`
  <a class="skip" href="#current-task">跳到目前任務</a>
@@ -127,14 +145,14 @@ function render(){
  ${drawer?'<button class="drawer-backdrop" data-action="drawer" aria-label="收起課程地圖"></button>':''}
  <div class="shell guided-shell">
  <nav class="rail ${drawer?'open':''}" aria-label="課程地圖"><button class="text-button rail-close" data-action="drawer">關閉 ×</button><div class="rail-title">倉庫訓練計劃 <small>8 課 · 18 個任務</small></div>${LESSONS.map((name,l)=>`<section class="lesson"><h2><span>${String(l).padStart(2,'0')}</span> ${name}</h2>${MISSIONS.filter(x=>x.lesson===l).map(x=>`<button data-mission="${x.id}" class="mission-link ${id===x.id?'current':''}" ${id===x.id?'aria-current="step"':''}><span>${String(x.id).padStart(2,'0')}</span>${x.title}<span class="mission-status">${saved[x.id]?.complete?'✓':id===x.id?'●':''}</span></button>`).join('')}</section>`).join('')}<p class="rail-note">不限時 · 重試不扣分<br>紀錄只保存在這部裝置</p></nav>
- <main id="current-task" class="guided phase-${phase} ${advanced?'show-advanced':''} mode-${mode} editor-${editor}">
- ${editorSwitch()}
+ <main id="current-task" class="guided phase-${phase} ${advanced?'show-advanced':''} ${short?'short-editor':''} mode-${mode} editor-${editor}">
  <p class="save-note ${storageOK?'':'storage-error'}" role="status">${storageOK?'草稿已在此裝置儲存；重開會接續關卡，執行由第 0 步開始。':'這個瀏覽器暫時無法儲存；請保留本頁，避免遺失草稿。'}</p>
  <section class="mission-heading"><div><div class="eyebrow">${id===17?'連續任務':'每次任務重設資料'} <span>/</span> ${LESSONS[stage]}</div><h1><span>${String(id).padStart(2,'0')}</span> ${m.title}</h1><p>${viewBrief()}</p></div><div class="task-stamp">ARRAY<br><strong>${String(id).padStart(2,'0')}</strong></div></section>
  <div class="workflow" aria-label="遊玩流程">${[['predict','預測'],['build','補指令'],['run','執行'],['reflect','結果']].map(([key,label],i)=>`<span class="${phase===key?'on':''}" ${phase===key?'aria-current="step"':''}><b>${i+1}</b>${label}</span>`).join('')}</div>
  <div class="teaching-reference">${teachingReferences(id).map(n=>`<a href="https://www.notion.so/${n.id}" target="_blank" rel="noopener">對應筆記 ${n.title} ↗</a>`).join(' · ')}<span>本遊戲：索引由 0 起；循環結束值不包括。</span></div>
  ${flowView()}
- <div class="advanced-access"><button class="text-button" data-action="advanced" aria-expanded="${advanced}">${advanced?'收起進階工具':'進階工具'}</button><small>關卡變式、自由編排、指令對照及程式追蹤</small></div>
+ <div class="advanced-access"><button class="text-button" data-action="advanced" aria-expanded="${advanced}">${advanced?'收起進階工具':id<=2?'更多編程方式':'進階工具'}</button><small>Blockly、自行輸入、自由編排及指令對照</small></div>
+ ${editorSwitch()}
  ${m.variants?`<div class="variants advanced-only" role="group" aria-label="任務變式">${m.variants.map((name,index)=>`<button data-variant="${index}" class="${v===index?'selected':''}">${name} ${saved[id]?.variants?.includes(index)?'✓':''}</button>`).join('')}</div>`:''}
  ${mappingView()}
  <div class="workbench">
@@ -143,7 +161,8 @@ function render(){
  ${phase==='build'?'<button class="text-button optional-prediction" data-action="back-predict">修改預測（選用）</button>':''}
  <div class="prediction ${id===0&&selected.length<2&&!locked?'waiting-for-selection':''}"><div class="micro-heading"><span>01 / 先預測</span>${locked?'<b>已鎖定</b>':'<b>執行前</b>'}</div><label for="prediction">${predPrompt()}</label><input id="prediction" value="${escape(prediction)}" placeholder="填入你的預測" ${locked?'disabled':''} autocomplete="off"><button class="${locked?'quiet':'dark'}" data-action="predict">${locked?'修改預測':'確認預測，下一步 →'}</button></div></div></section>
  <section class="panel workspace" id="workspace"><div class="panel-heading"><h2>指令工作區 <small>Program</small></h2><span class="card-count">${cards.length} 張卡</span></div><div class="workspace-toolbar"><label>編排方式 <select id="mode"><option value="scaffold" ${mode==='scaffold'?'selected':''}>補完關鍵步驟</option><option value="arrange" ${mode==='arrange'?'selected':''}>排卡練習</option><option value="blank" ${mode==='blank'?'selected':''}>自由編排</option></select></label><button class="text-button" data-action="restore">重設指令</button></div><p class="workspace-note">拖動卡片排序，或用 ↑ ↓；用 → 縮排，放入循環／如果內。</p>
- ${editor==='blocks'&&phase==='build'?'<div class="block-editor"><p id="block-status" role="status">載入積木中…</p><button class="outline block-find-gap" data-action="find-gap">找下一個空格</button><div id="blockly-workspace" aria-label="Blockly 積木工作區"></div></div>':''}
+ ${short&&phase==='build'?guidedView(short):''}
+ ${editor==='blocks'&&phase==='build'&&!short?'<div class="block-editor"><p id="block-status" role="status">載入積木中…</p><button class="outline block-find-gap" data-action="find-gap">找下一個空格</button><div id="blockly-workspace" aria-label="Blockly 積木工作區"></div></div>':''}
  ${monitorView(s)}
  <div class="program" aria-label="指令卡列表">${cards.length?cards.map((c,index)=>`<article class="command ${Object.values(scaffold[index]?.args||{}).includes('?')?'has-gap':''} ${s.card===index?'executing':''} ${['for','if'].includes(c.op)?'block-card':''}" style="--depth:${c.depth}" draggable="${advanced||mode!=='scaffold'}" data-card="${index}"><div class="command-title"><span class="line-number">${index+1}</span><b>${CARD_TYPES[c.op].label}</b><small>${CARD_TYPES[c.op].english}</small><div class="command-actions">${[['up','↑','上移'],['down','↓','下移'],['out','←','減少縮排'],['in','→','增加縮排'],['remove','×','移除']].map(([action,text,label])=>`<button data-edit="${action}" data-index="${index}" aria-label="第 ${index+1} 張卡${label}" ${action==='up'&&index===0||action==='down'&&index===cards.length-1||action==='out'&&c.depth===0?'disabled':''}>${text}</button>`).join('')}</div></div><p class="command-summary">${escape(codeLines([c],'pseudo').find(line=>line.index===0).text.split('  註：')[0].trim())}</p><div class="command-fields">${Object.entries(c.args).map(([key,value])=>`<label class="${mode==='scaffold'&&scaffold[index]?.args[key]!=='?'?'provided-field':''}">${FIELD_LABELS[key]}<input data-field="${key}" data-index="${index}" value="${escape(value)}" class="${value.includes('?')?'gap':''}" aria-label="第 ${index+1} 張卡 ${FIELD_LABELS[key]}" autocomplete="off" spellcheck="false"></label>`).join('')}</div></article>`).join(''):'<div class="empty-program">從下方選一張指令卡開始。<br><small>點一下加入；不需要拖拉也能完成。</small></div>'}</div>
  <div class="build-next"><p class="input-syntax">算式可用 DIV／MOD 或 //／%；相等比較可用 = 或 ==。grid 即筆記的 A；rows 為行數 R，cols 為列數 C。</p><div class="hints"><button class="text-button" data-action="hint">需要一點提示？</button>${hints>0?`<p>${hintText()}</p>`:''}</div><button class="primary full" data-action="ready-run">下一步：執行指令 →</button></div>
@@ -160,10 +179,10 @@ function render(){
  <footer><span>Lui Sir · 高中 ICT · 二維陣列</span><span>無帳戶 · 無計時 · 裝置本機紀錄</span><a href="./LICENSE">MIT © 2026 Aaron Lui</a></footer>
  </main></div>`;
  bind();
- if(editor==='blocks'&&phase==='build'){
+ if(editor==='blocks'&&phase==='build'&&!short){
   try{
    mountedCards=JSON.stringify(cards);
-   blockEditor=mountBlockly($('#blockly-workspace'),{cards,stage,snapshot:workspaceSnapshot(cards,blockDraft),onChange:acceptBlocks});
+   blockEditor=mountBlockly($('#blockly-workspace'),{cards,stage,rows:grid().length,cols:grid()[0].length,snapshot:workspaceSnapshot(cards,blockDraft),onChange:acceptBlocks});
    const value=blockEditor.read();blockIssue=value.issue;$('#block-status').textContent=blockIssue||'點選積木內的選單，或從上方拖入算式；完成後按「下一步」。';
   }catch(error){blockIssue=error.message;$('#block-status').textContent=blockIssue+' 可按上方「自行輸入」繼續。';}
  }
@@ -203,6 +222,7 @@ function bind(){
  $('#mode').onchange=e=>{discardBlocks();mode=e.target.value;cards=startingCards(id,v,mode);invalidate();render();};
  document.querySelectorAll('[data-cell]').forEach(b=>b.onclick=()=>{if(b.dataset.table!=='grid')return;const p=b.dataset.cell.split(',').map(Number);flowError='';if(!locked){if(id===0){const target=[[0,2],[2,0]][selected.length];if(target&&!equal(target,p)){flowError=`這格是 (${p.join(',')})。請先找橙框的 (${target.join(',')})。`;}else if(target)selected.push(p);}else selected=[p];}state().current=p;render();if(id===0&&phase==='predict'&&!locked&&!flowError){const next=selected.length<2?$('.cell.target'):$('#prediction');next?.focus({preventScroll:true});next?.scrollIntoView({block:'nearest',behavior:'instant'});}});
  document.querySelectorAll('[data-field]').forEach(input=>input.oninput=e=>{const index=input.dataset.index,field=input.dataset.field,start=e.target.selectionStart,end=e.target.selectionEnd;cards[Number(index)].args[field]=e.target.value;invalidate();render();const fresh=document.querySelector(`[data-field="${field}"][data-index="${index}"]`);fresh.focus({preventScroll:true});fresh.setSelectionRange(start,end);});
+ document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{const {choice,fieldKey,index}=b.dataset;cards[Number(index)].args[fieldKey]=choice;flowError='';invalidate();render();document.querySelector(`[data-choice="${choice}"][data-field-key="${fieldKey}"][data-index="${index}"]`)?.focus({preventScroll:true});});
  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.index),a=b.dataset.edit;if(a==='remove')cards.splice(i,1);if(a==='in')cards[i].depth=Math.min(8,cards[i].depth+1);if(a==='out')cards[i].depth=Math.max(0,cards[i].depth-1);if(a==='up'&&i>0)[cards[i-1],cards[i]]=[cards[i],cards[i-1]];if(a==='down'&&i<cards.length-1)[cards[i+1],cards[i]]=[cards[i],cards[i+1]];invalidate();render();});
  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{cards.push(card(b.dataset.add,clone(CARD_TYPES[b.dataset.add].args)));invalidate();render();});
  document.querySelectorAll('[draggable]').forEach(el=>el.ondragstart=e=>{if(e.target.tagName==='INPUT'){e.preventDefault();return;}drag=el.dataset.new?{op:el.dataset.new}:{index:Number(el.dataset.card)};e.dataTransfer.setData('text/plain','instruction');});
@@ -224,7 +244,21 @@ function bind(){
    case 'independent':discardBlocks();phase='build';mode='blank';cards=[];hints=0;invalidate();render();break;
    case 'back-predict':goPhase('predict');break;
    case 'back-build':goPhase('build');break;
-   case 'ready-run':if(editor==='blocks'&&blockIssue){flowError=blockIssue;render();break;}if(!cards.length||cards.some(c=>Object.values(c.args).some(value=>!value.trim()||value.includes('?')))){flowError='還有未完成的欄位。請選擇積木內的數值／變量，或把 ? 換成你的算式。';render();}else{invalidate();if(begin())goPhase('run');else{const message=result?.message;locked=false;goPhase('predict');flowError=message||'請重新確認預測。';render();}}break;
+   case 'ready-run':{
+    if(editor==='blocks'&&!shortFields()&&blockIssue){flowError=blockIssue;render();break;}
+    const incomplete=firstIncomplete(cards);
+    if(incomplete){
+     flowError=shortFields()?incomplete.message.replace(/^第 \d+ 張/,'這張'):incomplete.message;
+     if(editor==='type'&&mode==='scaffold'&&starter(id,v)[incomplete.index]?.args[incomplete.key]!=='?')advanced=true;
+     render();focusIncomplete(incomplete);
+    }
+    else if(!cards.length){
+     if(editor==='blocks'){flowError='工作區還未有指令。請打開積木工具列的「指令」，接到「開始任務」內。';render();$('#blockly-workspace')?.scrollIntoView({block:'nearest',behavior:'instant'});}
+     else{flowError='工作區還未有指令。請從指令卡庫加入一張卡。';advanced=true;render();$('.palette')?.setAttribute('open','');$('.palette summary')?.focus();}
+    }
+    else{invalidate();if(begin())goPhase('run');else{const message=result?.message;locked=false;goPhase('predict');flowError=message||'請重新確認預測。';render();}}
+    break;
+   }
    case 'predict':if(locked){locked=false;selected=[];invalidate();render();}else{flowError=predictionIssue(id,selected,prediction);if(flowError){render();break;}locked=true;predictedCorrect=normalize(prediction)===normalize(predAnswer());result=null;goPhase('build');}break;
    case 'step':step();break;case 'run':execute();break;case 'verify':verify();break;
    case 'undo':stop();cursor=Math.max(0,cursor-1);result=null;quiz=null;render();break;

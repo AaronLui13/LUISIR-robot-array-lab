@@ -21,24 +21,24 @@ export function defineLabBlocks(B,choices){
  }};
 }
 const shadow=value=>({shadow:{type:'lab_atom',fields:{VALUE:value}}});
-export function toolbox(stage,cards){
+export function toolbox(stage,cards,choices=blockChoices(cards,{stage})){
  const simple={kind:'block',type:'lab_atom',fields:{VALUE:'?'}};
  return {kind:'categoryToolbox',contents:[
-  {kind:'category',name:'數值／變量',colour:35,contents:[simple,{...simple,fields:{VALUE:'0'}},{...simple,fields:{VALUE:'r'}},{...simple,fields:{VALUE:'c'}},{...simple,fields:{VALUE:'rows'}},{...simple,fields:{VALUE:'cols'}}]},
+  {kind:'category',name:'數值／變量',colour:35,contents:['?','0','r','c','rows','cols'].filter(v=>choices.values.includes(v)).map(VALUE=>({...simple,fields:{VALUE}}))},
   {kind:'category',name:'算式／條件',colour:210,contents:['+','-','*','//','%','==','<','and','or'].map(OP=>({kind:'block',type:'lab_binary',fields:{OP},inputs:{LEFT:shadow('?'),RIGHT:shadow('?')}})).concat([{kind:'block',type:'lab_unary',inputs:{VALUE:shadow('?')}}])},
-  {kind:'category',name:'陣列元素',colour:185,contents:[{kind:'block',type:'lab_cell',inputs:{R:shadow('r'),C:shadow('c')}}]},
+  {kind:'category',name:'陣列元素',colour:185,contents:[{kind:'block',type:'lab_cell',inputs:{R:shadow(choices.values.includes('r')?'r':'0'),C:shadow(choices.values.includes('c')?'c':'0')}}]},
   {kind:'category',name:'指令',colour:155,contents:Object.entries(CARD_TYPES).filter(([op,t])=>t.stage<=stage||cards.some(c=>c.op===op)).map(([op,t])=>({kind:'block',type:`lab_${op}`,fields:t.args.name?{NAME:t.args.name}:undefined,inputs:Object.fromEntries(Object.entries(t.args).filter(([k])=>k!=='name').map(([k])=>[k.toUpperCase(),shadow('?')]))}))}
  ]};
 }
-export function mountBlockly(element,{cards,stage,snapshot,onChange}){
+export function mountBlockly(element,{cards,stage,rows,cols,snapshot,onChange}){
  const B=globalThis.Blockly;
  if(!B)throw Error('積木工具未能載入，請重新整理；仍可使用自行輸入。');
- const choices=blockChoices(cards);
+ const choices=blockChoices(cards,{stage,rows,cols});
  // Detached blocks can contain values that no longer occur in the active cards.
  const collect=node=>{if(!node||typeof node!=='object')return;for(const [key,value] of Object.entries(node)){if((key==='VALUE'||key==='NAME')&&typeof value==='string'){const list=key==='NAME'?choices.names:choices.values;if(!list.includes(value))list.push(value);}else if(typeof value==='object')collect(value);}};
  collect(snapshot);
  defineLabBlocks(B,choices);
- const workspace=B.inject(element,{toolbox:toolbox(stage,cards),media:'./vendor/media/',renderer:'zelos',horizontalLayout:true,toolboxPosition:'start',trashcan:true,sounds:false,scrollbars:true,move:{scrollbars:true,drag:true,wheel:true},zoom:{controls:true,wheel:false,startScale:.8,minScale:.35,maxScale:1.4,scaleSpeed:1.15}});
+ const workspace=B.inject(element,{toolbox:toolbox(stage,cards,choices),media:'./vendor/media/',renderer:'zelos',horizontalLayout:true,toolboxPosition:'start',trashcan:true,sounds:false,scrollbars:true,move:{scrollbars:true,drag:true,wheel:true},zoom:{controls:true,wheel:false,startScale:.8,minScale:.35,maxScale:1.4,scaleSpeed:1.15}});
  let loading=true;
  try{B.serialization.workspaces.load(snapshot||cardsToBlocks(cards),workspace);}catch(error){workspace.dispose();throw error;}
  loading=false;
@@ -46,5 +46,14 @@ export function mountBlockly(element,{cards,stage,snapshot,onChange}){
  const listener=event=>{if(loading||event.isUiEvent||event.type===B.Events.FINISHED_LOADING)return;try{onChange(read());}catch(error){onChange({issue:error.message});}};
  workspace.addChangeListener(listener);
  const observer=new ResizeObserver(()=>B.svgResize(workspace));observer.observe(element);
- return {read,focusGap(){const gap=workspace.getAllBlocks(false).find(b=>(b.type==='lab_atom'&&b.getFieldValue('VALUE')==='?')||(b.type==='lab_text'&&(!b.getFieldValue('TEXT').trim()||b.getFieldValue('TEXT').includes('?')))||b.inputList.some(input=>input.connection?.type===B.ConnectionType.INPUT_VALUE&&!input.connection.targetBlock()));if(!gap)return false;workspace.centerOnBlock(gap.id);gap.select();return true;},resize:()=>B.svgResize(workspace),dispose(){observer.disconnect();workspace.removeChangeListener(listener);workspace.dispose();}};
+ return {read,focusGap(target){
+  const incomplete=b=>(b.type==='lab_atom'&&b.getFieldValue('VALUE')==='?')||(b.type==='lab_text'&&(!b.getFieldValue('TEXT').trim()||b.getFieldValue('TEXT').includes('?')))||(b.getField('NAME')&&(!b.getFieldValue('NAME').trim()||b.getFieldValue('NAME').includes('?')))||b.inputList.some(input=>input.connection?.type===B.ConnectionType.INPUT_VALUE&&!input.connection.targetBlock());
+  const commands=[];
+  const visit=block=>{for(let b=block;b;b=b.getNextBlock()){commands.push(b);if(b.getInput('BODY'))visit(b.getInputTargetBlock('BODY'));}};
+  visit(workspace.getTopBlocks(false).find(b=>b.type==='lab_start')?.getInputTargetBlock('BODY'));
+  const command=target&&commands[target.index],expression=command?.getInputTargetBlock(target.key.toUpperCase());
+  const gap=expression?.getDescendants(false).find(incomplete)||(command&&incomplete(command)?command:null)||workspace.getAllBlocks(false).find(incomplete);
+  if(!gap)return false;
+  element.scrollIntoView({block:'nearest',behavior:'instant'});workspace.centerOnBlock(gap.id);gap.select();element.tabIndex=0;element.focus({preventScroll:true});return true;
+ },resize:()=>B.svgResize(workspace),dispose(){observer.disconnect();workspace.removeChangeListener(listener);workspace.dispose();}};
 }
