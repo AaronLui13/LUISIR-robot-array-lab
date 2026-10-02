@@ -82,14 +82,19 @@ export function blocksToCards(workspace){
  sequence(starts[0].getInputTargetBlock('BODY'),0);
  return {cards,issue:tops.length>1?'有積木未連接：請接入「開始任務」，或刪除不用的積木，再執行。切換模式會保留未連接積木。':''};
 }
-export function blockChoices(cards){
- const values=new Set(['?','0','1','2','3','4','5','rows','cols','r','c','i','j','nr','nc','value','total','count','temp','index','best','not_found',...Array.from({length:22},(_,i)=>String(i-1))]);
- const names=new Set(['r','c','i','j','nr','nc','value','total','count','temp','index','best']);
+export function blockChoices(cards,{stage=9,rows=3,cols=4}={}){
+ const variables=stage<2?[]:['rows','cols','r','c','count','total'];
+ if(stage>=3)variables.push('value','found','not_found');
+ if(stage>=4)variables.push('index');
+ if(stage>=5)variables.push('nr','nc','temp');
+ if(stage>=8)variables.push('i','j','best','br','bc');
+ const values=new Set(['?',...Array.from({length:stage<2?6:Math.max(21,rows*cols+1)},(_,i)=>String(stage<2?i:i-1)),...variables]);
+ const names=new Set(variables.filter(v=>!['rows','cols','not_found'].includes(v)));
  for(const c of cards)for(const [key,value] of Object.entries(c.args)){
   if(key==='name')names.add(value);
   for(const t of value.match(/[A-Za-z_]\w*|\d+/g)||[])if(!['grid','result','floor','and','or','DIV','MOD','AND','OR'].includes(t))values.add(t);
  }
- return {values:[...values],names:[...names]};
+ return {values:[...values],names:names.size?[...names]:['value']};
 }
 
 // Keep loose blocks even when the connected program is edited in typing mode.
